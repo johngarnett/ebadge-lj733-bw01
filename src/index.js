@@ -56,8 +56,10 @@ async function cmdSend([imagePath, badgeName = null]) {
       console.log('\nTransfer complete ✓')
    } catch (err) {
       console.error('\nError:', err.message)
+      console.error('Tip: transfers fail when the badge battery is low or the badge is charging.')
       process.exit(1)
    } finally {
+      ble.removeListener('disconnect', onUnexpectedDisconnect)
       await ble.disconnect()
       process.exit(0)
    }
@@ -66,12 +68,19 @@ async function cmdSend([imagePath, badgeName = null]) {
 async function cmdList([badgeName = null]) {
    const { ble, media } = await connect(badgeName)
    try {
-      const list = await media.requestList()
-      if (list.length === 0) {
-         console.log('No media files on device.')
+      const result = await media.requestList()
+      if (Array.isArray(result)) {
+         if (result.length === 0) {
+            console.log('No media files on device.')
+         } else {
+            console.log(`\n${result.length} file(s) on device:\n`)
+            for (const f of result) printFileInfo(f)
+         }
       } else {
-         console.log(`\n${list.length} file(s) on device:\n`)
-         for (const f of list) printFileInfo(f)
+         // Badge responded but format is not a parsed file list (device capabilities response).
+         console.log('\nDevice capabilities response (raw):')
+         console.log(`  ${result._raw || JSON.stringify(result)}`)
+         if (result._parseError) console.log(`  (parse note: ${result._parseError})`)
       }
    } catch (err) {
       console.error('\nError:', err.message)
