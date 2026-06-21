@@ -86,7 +86,7 @@ class BleClient extends EventEmitter {
             }
          })
 
-         noble.startScanning([SERVICE_UUID], false)
+         noble.startScanning([], false)
       })
    }
 
