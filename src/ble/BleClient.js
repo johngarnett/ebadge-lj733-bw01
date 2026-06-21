@@ -47,6 +47,12 @@ class BleClient extends EventEmitter {
       this._notifyCallbacks.push(fn)
    }
 
+   // Remove a previously registered notify callback
+   removeNotifyListener(fn) {
+      const idx = this._notifyCallbacks.indexOf(fn)
+      if (idx !== -1) this._notifyCallbacks.splice(idx, 1)
+   }
+
    // ── private ────────────────────────────────────────────────────────────────
 
    _waitForPoweredOn() {

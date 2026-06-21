@@ -2,6 +2,7 @@ const path = require('path')
 const { BleClient } = require('./ble/BleClient')
 const { FileTransfer } = require('./protocol/fileTransfer')
 const { MediaManagement } = require('./protocol/mediaManagement')
+const { requestDeviceInfo } = require('./protocol/systemInfo')
 
 const FILE_TYPE_NAME = { 1: 'IMAGE', 2: 'VIDEO', 3: 'ANIMATION' }
 
@@ -133,6 +134,15 @@ async function connect(badgeName) {
    ble.on('disconnect', onUnexpectedDisconnect)
    try {
       await ble.connect(badgeName)
+      try {
+         const info = await requestDeviceInfo(ble)
+         if (info) {
+            console.log(`Device: ${info.deviceName}  fw:${info.deviceVersion}  proto:${info.protocolVersion}`)
+            console.log(`Storage: ${info.freeStorage} / ${info.storageCapacity} bytes free`)
+         }
+      } catch (infoErr) {
+         console.log(`Note: device info unavailable (${infoErr.message})`)
+      }
    } catch (err) {
       console.error('\nError:', err.message)
       process.exit(1)
