@@ -14,6 +14,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "@abandonware/noble": "^1.9.2-26"
+    "@abandonware/noble": "^1.9.2-26",
+    "sharp": "^0.35.2"
   }
 }
