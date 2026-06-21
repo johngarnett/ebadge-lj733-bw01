@@ -1,10 +1,10 @@
-// Wire-protocol constants observed from BLE snoop log analysis.
-// Service byte (byte[3]) = 0x1F for phone->badge packets.
-// Badge->phone CD-format packets use 0x20; DC-format acks use 0x1F.
+// Wire-protocol constants verified from BLE snoop log.
+// SERVICE_TX=0x1F is used by the phone app for all CD packets (MEDIA_MANAGEMENT,
+// FILE_TRANSFER, SYSTEM_INFO). DC_ACKs from the phone use service=0x20.
 
 const START_MARKER = 0xCD
 const DC_MARKER    = 0xDC
-const SERVICE_TX   = 0x25   // phone -> badge (observed from badge echo byte)
+const SERVICE_TX   = 0x1F   // phone -> badge (verified from snoop log)
 const PROTO_VER    = 0x01
 
 const MODULE = {
@@ -13,9 +13,10 @@ const MODULE = {
    SYSTEM_INFO:      0x03,
 }
 
-// All observed protocol commands use command byte 0x00
 const CMD = {
-   REQUEST: 0x00,
+   REQUEST:             0x00,
+   TRANSFER_COMPLETE:   0x06,   // FILE_TRANSFER: phone→badge, payload=[fileId 8B][crc32 4B]
+   VERIFICATION_RESULT: 0x0E,   // FILE_TRANSFER: phone→badge, payload=[fileId 8B][success 1B]
 }
 
 // Error codes from com.baji.protocol.model.ErrorCode (APK decompile)
@@ -56,11 +57,11 @@ function buildPacket(moduleId, command, payload) {
    const payloadLenField = payload.length + 1
    const buf = Buffer.allocUnsafe(9 + payload.length)
    buf[0] = START_MARKER
-   buf.writeUInt16BE(contentLen, 1)
+   buf.writeUInt16BE(contentLen & 0xFFFF, 1)   // mask: large payloads wrap; badge uses announce size for reassembly
    buf[3] = SERVICE_TX
    buf[4] = PROTO_VER
    buf[5] = moduleId
-   buf.writeUInt16BE(payloadLenField, 6)
+   buf.writeUInt16BE(payloadLenField & 0xFFFF, 6)
    buf[8] = command
    if (payload.length > 0) payload.copy(buf, 9)
    return buf
@@ -68,10 +69,30 @@ function buildPacket(moduleId, command, payload) {
 
 // Build a DC-format acknowledgment packet (always 8 bytes).
 // Layout: [DC][00][05][service][01][00][0C][01]
-// service = 0x20 for file-transfer acks, 0x1F for initial media-mgmt ack
+// Used for file-transfer step ACKs (service=0x20).
 function buildDcAck(serviceByte) {
    if (serviceByte === undefined) serviceByte = 0x20
    return Buffer.from([0xDC, 0x00, 0x05, serviceByte, 0x01, 0x00, 0x0C, 0x01])
+}
+
+// Module-specific argBytes for acknowledging badge CD responses (from snoop log).
+const MODULE_ACK_ARG = {
+   0x01: 0x0C,  // FILE_TRANSFER
+   0x02: 0x28,  // MEDIA_MANAGEMENT
+   0x03: 0x12,  // SYSTEM_INFO
+}
+
+// Build a DC-format ack for a specific badge module response (8 bytes).
+// Layout: [DC][00][05][20][module][00][argByte][01]
+function buildModuleAck(moduleId) {
+   const arg = MODULE_ACK_ARG[moduleId] !== undefined ? MODULE_ACK_ARG[moduleId] : 0x0C
+   return Buffer.from([0xDC, 0x00, 0x05, 0x20, moduleId, 0x00, arg, 0x01])
+}
+
+// Build a compact 8-byte query packet (verified from snoop: list/info requests use this format).
+// Layout: [CD][00][05][20][01][module][cmd][00]
+function buildCompactPacket(moduleId, cmd) {
+   return Buffer.from([0xCD, 0x00, 0x05, 0x20, 0x01, moduleId, cmd & 0xFF, 0x00])
 }
 
 // Parse a notification Buffer received from the badge.
@@ -88,6 +109,7 @@ function parseNotification(buf) {
          type:     'dc_ack',
          service:  buf[3],
          module:   buf[4],
+         byte5:    buf[5],
          argByte:  buf[6],
          lastByte: buf[7],
       }
@@ -109,60 +131,59 @@ function parseNotification(buf) {
 }
 
 // MEDIA_MANAGEMENT pre-announce payload (16 bytes).
-// Bytes[10-11] carry (fileSize + 4) as a big-endian 16-bit value;
-// the +4 accounts for the 4-byte checksum appended to the JPEG.
+// Bytes 10-11 carry (fileSize + 4) as a big-endian 16-bit value.
+// Verified from snoop: 25829-byte JPEG → bytes[10-11] = 0x64E9 (= 25833 = 25829+4).
+// The +4 corresponds to the 4-byte trailing field at the end of the two-part transfer.
 function buildMediaManagementPayload(fileSize) {
    const buf = Buffer.from([
       0x00, 0x15, 0xa2, 0x02,
       0x08, 0x00, 0x00, 0x00,
-      0x00, 0x00,
-      0x00, 0x00,             // filled below
+      0x00, 0x00, 0x00, 0x00,  // bytes 10-11: filled below (16-bit), 12-13: zero
       0x00, 0x00, 0x00, 0x00,
    ])
-   const total = fileSize + 4
-   buf[10] = (total >>> 8) & 0xFF
-   buf[11] = total & 0xFF
+   buf.writeUInt16BE(fileSize + 4, 10)
    return buf
 }
 
-// Transfer checksum: simple unsigned byte-sum of
-// [fileSize as 4 bytes BE] + [all jpeg bytes].  (type byte 0x01 is NOT included)
-// Verified against a captured transfer in the BLE snoop log.
-function computeChecksum(jpegData) {
-   const sz = jpegData.length
-   let sum  = 0
-   sum += (sz >>> 24) & 0xFF
-   sum += (sz >>> 16) & 0xFF
-   sum += (sz >>>  8) & 0xFF
-   sum +=  sz         & 0xFF
-   for (const b of jpegData) sum += b
-   return sum >>> 0
+// CRC32 of the JPEG data bytes (matches java.util.zip.CRC32 used in the APK).
+function computeCrc32(jpegData) {
+   return require('zlib').crc32(jpegData) >>> 0
 }
 
-// TRANSFER_START payload:
-// [0x01][fileSize BE 4 bytes][jpeg_data][checksum BE 4 bytes]
+// TRANSFER_START payload: [0x01][fileSize BE 4 bytes][jpeg_data][last4 BE 4 bytes]
+// last4 = bytesum(magic1 + fileSize_bytes + jpeg) as uint32 BE.
+// The badge validates last4 on receipt before accepting the commit (SYSTEM_INFO).
+// Missing last4 causes the badge to send FT status=1 and reject the SYSTEM_INFO commit.
 function buildTransferStartPayload(jpegData) {
-   const chk = computeChecksum(jpegData)
-   const sz  = jpegData.length
+   const sz = jpegData.length
+   let bsum = 1  // magic1=0x01
+   bsum += ((sz >>> 24) & 0xFF) + ((sz >>> 16) & 0xFF) + ((sz >>> 8) & 0xFF) + (sz & 0xFF)
+   for (let i = 0; i < jpegData.length; i++) bsum += jpegData[i]
+   const last4 = bsum >>> 0  // uint32
    const buf = Buffer.allocUnsafe(1 + 4 + sz + 4)
-   let off = 0
-   buf[off++] = 0x01
-   buf.writeUInt32BE(sz, off)   ; off += 4
-   jpegData.copy(buf, off)      ; off += sz
-   buf.writeUInt32BE(chk, off)
+   buf[0] = 0x01
+   buf.writeUInt32BE(sz, 1)
+   jpegData.copy(buf, 5)
+   buf.writeUInt32BE(last4, 5 + sz)
    return buf
 }
 
-// SYSTEM_INFO post-transfer payload (3 bytes):
-// [dcAckByte][checksum_byte2][checksum_byte3]
-// dcAckByte = argByte from the badge's DC ack to MEDIA_MANAGEMENT.
-// checksum bytes 2-3 = the lower two bytes of the 4-byte transfer checksum.
-function buildSystemInfoPayload(dcAckByte, checksum) {
-   return Buffer.from([
-      dcAckByte,
-      (checksum >>> 8) & 0xFF,
-      checksum & 0xFF,
-   ])
+// Confirmed from 3 single-part transfers: SYSTEM_INFO = bytesum(fileSize_bytes + jpeg) & 0xFFFFFF
+// Equals (last4 - magic1) since last4 = bytesum(magic1 + fileSize_bytes + jpeg) as uint32.
+function buildSystemInfoPayload(jpegData) {
+   const sz = jpegData.length
+   let bsum = ((sz >>> 24) & 0xFF) + ((sz >>> 16) & 0xFF) + ((sz >>> 8) & 0xFF) + (sz & 0xFF)
+   for (let i = 0; i < jpegData.length; i++) bsum += jpegData[i]
+   return Buffer.from([(bsum >>> 16) & 0xFF, (bsum >>> 8) & 0xFF, bsum & 0xFF])
+}
+
+// TRANSFER_COMPLETE payload: [fileId 8B BE][crc32 4B BE]
+// Sent after JPEG upload in TLV two-phase protocol (APK: sendTransferCompleteWithChecksum).
+function buildTransferCompletePayload(fileId, crc32) {
+   const buf = Buffer.allocUnsafe(12)
+   buf.writeBigUInt64BE(BigInt(fileId), 0)
+   buf.writeUInt32BE(crc32 >>> 0, 8)
+   return buf
 }
 
 module.exports = {
@@ -172,9 +193,12 @@ module.exports = {
    dcAckError,
    buildPacket,
    buildDcAck,
+   buildModuleAck,
+   buildCompactPacket,
    parseNotification,
    buildMediaManagementPayload,
    buildTransferStartPayload,
+   buildTransferCompletePayload,
    buildSystemInfoPayload,
-   computeChecksum,
+   computeCrc32,
 }
