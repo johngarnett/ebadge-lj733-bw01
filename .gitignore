@@ -1,0 +1,16 @@
+node_modules/
+*.apk
+*.bin
+*.zip
+*.txt
+bugreport-*
+dumpstate_*
+all_packages*
+main_entry*
+version*
+visible_windows*
+list
+pull
+FS/
+superband_ebadge_src/
+proto/

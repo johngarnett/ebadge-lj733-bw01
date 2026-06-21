@@ -1,0 +1,19 @@
+{
+  "name": "ebadge",
+  "version": "1.0.0",
+  "description": "I have an electronic badge with a 360x360 display which communicates with a phone application via bluetooth. The phone application is able to push JPEG images to the badge which then shows the image.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "send": "node src/index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@abandonware/noble": "^1.9.2-26"
+  }
+}
