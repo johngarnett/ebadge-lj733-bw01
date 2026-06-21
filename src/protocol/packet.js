@@ -1,6 +1,7 @@
-const START_MARKER = 0xCD
-const PRODUCT_ID   = 0x25
-const PROTO_VER    = 0x01
+const START_MARKER    = 0xCD   // command packets  (app → badge)
+const RESPONSE_MARKER = 0xDC   // response packets (badge → app)
+const PRODUCT_ID      = 0x25
+const PROTO_VER       = 0x01
 
 const MODULE = {
    FILE_TRANSFER:    0x01,
@@ -69,13 +70,22 @@ function buildPacket(moduleId, command, payload = Buffer.alloc(0)) {
 }
 
 function parsePacket(buf) {
-   if (buf.length < 9) return null
-   if (buf[0] !== START_MARKER) return null
-   if (buf[3] !== PRODUCT_ID)   return null
-   const moduleId = buf[5]
-   const command  = buf[8]
-   const payload  = buf.length > 9 ? buf.slice(9) : Buffer.alloc(0)
-   return { moduleId, command, payload }
+   if (buf.length < 6) return null
+   if (buf[3] !== PRODUCT_ID) return null
+
+   if (buf[0] === START_MARKER && buf.length >= 9) {
+      // Command format (app → badge):
+      // CD contentLen(2) PRODUCT_ID PROTO_VER MODULE payloadLenField(2) CMD [payload...]
+      return { moduleId: buf[5], command: buf[8], payload: buf.length > 9 ? buf.slice(9) : Buffer.alloc(0) }
+   }
+
+   if (buf[0] === RESPONSE_MARKER) {
+      // Response format (badge → app):
+      // DC contentLen(2) PRODUCT_ID MODULE CMD [payload...]
+      return { moduleId: buf[4], command: buf[5], payload: buf.length > 6 ? buf.slice(6) : Buffer.alloc(0) }
+   }
+
+   return null
 }
 
 // Build the TRANSFER_START payload from a FileInfo descriptor

@@ -67,7 +67,7 @@ class MediaManagement extends EventEmitter {
             reject(new Error(`Timeout waiting for response to media command 0x${cmdOut.toString(16)}`))
          }, CMD_TIMEOUT_MS)
 
-         this._pending = { cmdIn, resolve, reject, timer, parser }
+         this._pending = { cmdOut, cmdIn, resolve, reject, timer, parser }
          this._ble.write(buildPacket(MODULE.MEDIA_MANAGEMENT, cmdOut, payload || Buffer.alloc(0)))
       })
    }
@@ -77,15 +77,23 @@ class MediaManagement extends EventEmitter {
       if (!pkt || pkt.moduleId !== MODULE.MEDIA_MANAGEMENT) return
 
       const p = this._pending
-      if (!p || pkt.command !== p.cmdIn) return
+      // Badge echoes the request command byte in error/short responses; also accept the
+      // designated response command byte for normal successful responses.
+      if (!p || (pkt.command !== p.cmdIn && pkt.command !== p.cmdOut)) return
 
       this._pending = null
       clearTimeout(p.timer)
 
+      const err = decodeError(pkt.payload)
+      if (err) {
+         p.reject(new Error(`Badge error: ${err}`))
+         return
+      }
+
       try {
          p.resolve(p.parser(pkt.payload))
-      } catch (err) {
-         p.reject(err)
+      } catch (parseErr) {
+         p.reject(parseErr)
       }
    }
 }
@@ -167,6 +175,31 @@ function parseBatchPreviewInfo(buf) {
    }
 
    return { pendingIds, previews }
+}
+
+// Badge error codes (from com.baji.protocol.model.ErrorCode)
+const ERROR_NAMES = {
+   0x01: 'INVALID_PACKET',
+   0x02: 'UNSUPPORTED_COMMAND',
+   0x03: 'INVALID_PARAMETER',
+   0x04: 'FILE_NOT_FOUND',
+   0x05: 'FILE_TOO_LARGE',
+   0x06: 'INSUFFICIENT_STORAGE',
+   0x07: 'TRANSFER_TIMEOUT',
+   0x08: 'CHECKSUM_MISMATCH',
+   0x09: 'DEVICE_BUSY',
+   0x0A: 'FILE_SIZE_MISMATCH',
+   0x0B: 'VERIFICATION_FAILED',
+   0x0C: 'INVALID_PAYLOAD',
+   0xFF: 'UNKNOWN_ERROR',
+}
+
+// Returns an error name if the payload looks like a badge error response, null otherwise.
+// Error responses are short (≤ 4 bytes) and start with a known non-zero error code.
+function decodeError(payload) {
+   if (payload.length === 0 || payload.length > 4) return null
+   const code = payload[0]
+   return ERROR_NAMES[code] || null
 }
 
 // Metadata is key=value pairs separated by ;

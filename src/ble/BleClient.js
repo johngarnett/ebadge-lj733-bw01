@@ -38,6 +38,7 @@ class BleClient extends EventEmitter {
    // Write a Buffer to the badge (no-response write for speed)
    write(buf) {
       if (!this._writeChar) throw new Error('Not connected')
+      if (process.env.DEBUG) console.log('→ raw:', buf.toString('hex'))
       this._writeChar.write(buf, true)  // true = withoutResponse
    }
 
@@ -126,6 +127,7 @@ class BleClient extends EventEmitter {
 
       await this._notifyChar.subscribeAsync()
       this._notifyChar.on('data', buf => {
+         if (process.env.DEBUG) console.log('← raw:', buf.toString('hex'))
          for (const fn of this._notifyCallbacks) fn(buf)
       })
 
