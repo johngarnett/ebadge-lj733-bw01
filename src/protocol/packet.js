@@ -80,13 +80,21 @@ const MODULE_ACK_ARG = {
    0x01: 0x0C,  // FILE_TRANSFER
    0x02: 0x28,  // MEDIA_MANAGEMENT
    0x03: 0x12,  // SYSTEM_INFO
+   0x0C: 0x1E,  // post-transfer notification (btsnoop: dc0005150c001e01)
+}
+
+// Modules whose DC ack uses service=0x15 instead of the default 0x20.
+const MODULE_ACK_SERVICE = {
+   0x0C: 0x15,
 }
 
 // Build a DC-format ack for a specific badge module response (8 bytes).
-// Layout: [DC][00][05][20][module][00][argByte][01]
+// Layout: [DC][00][05][svc][module][00][argByte][01]
+// Service byte defaults to 0x20; module=0x0C uses 0x15 (verified from btsnoop).
 function buildModuleAck(moduleId) {
    const arg = MODULE_ACK_ARG[moduleId] !== undefined ? MODULE_ACK_ARG[moduleId] : 0x0C
-   return Buffer.from([0xDC, 0x00, 0x05, 0x20, moduleId, 0x00, arg, 0x01])
+   const svc = MODULE_ACK_SERVICE[moduleId] || 0x20
+   return Buffer.from([0xDC, 0x00, 0x05, svc, moduleId, 0x00, arg, 0x01])
 }
 
 // Build a compact 8-byte query packet (verified from snoop: list/info requests use this format).

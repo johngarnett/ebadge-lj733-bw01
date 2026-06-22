@@ -42,11 +42,11 @@ class FileTransfer extends EventEmitter {
       this._timer         = null
       this._state         = 'idle'
       this._slotId        = 0
-      this._checksum      = 0
-      this._jpegData      = null
-      this._recovering    = false
-      this._allWritesSent = false
-      this._pendingCommit = false   // status=1001 arrived while writes in flight
+      this._checksum           = 0
+      this._jpegData           = null
+      this._allWritesSent      = false
+      this._pendingCommit      = false   // status=1001 arrived while writes in flight
+      this._pendingMod0cCommit = false   // mod=0x0C arrived while writes in flight (Path A)
    }
 
    async sendFile(filePath) {
@@ -62,7 +62,8 @@ class FileTransfer extends EventEmitter {
          this._resolve = resolve
          this._reject  = reject
 
-         this._allWritesSent = false
+         this._allWritesSent      = false
+         this._pendingMod0cCommit = false
          this._pendingCommit = false
          this._ble.onNotify(buf => this._onNotify(buf))
 
@@ -130,6 +131,22 @@ class FileTransfer extends EventEmitter {
          return
       }
 
+      // Module 0x0C in wait_data_ack = Path A "JPEG received" signal (replaces status=1001
+      // for badge-with-files transfers). Send correct service=0x15 ack, then commit.
+      if (pkt.type === 'cd_packet' && pkt.moduleId === 0x0C && this._state === 'wait_data_ack') {
+         console.log(`  ← mod=0x0C (Path A JPEG receipt) — committing [${buf.toString('hex')}]`)
+         this._ble.write(buildModuleAck(0x0C))
+         if (this._allWritesSent) {
+            this._clearTimer()
+            this._setState('wait_final_ack', 'Waiting for badge to confirm commit', FINAL_STEP_TIMEOUT_MS)
+            setImmediate(() => this._sendSystemInfo())
+         } else {
+            this._pendingMod0cCommit = true
+            this._resetTimer()
+         }
+         return
+      }
+
       if (pkt.type === 'cd_packet') {
          console.log(`  ← svc=0x${pkt.service.toString(16)} mod=0x${pkt.moduleId.toString(16)} cmd=0x${pkt.command.toString(16)} [${buf.toString('hex')}]`)
          this._ble.write(buildModuleAck(pkt.moduleId))
@@ -151,24 +168,6 @@ class FileTransfer extends EventEmitter {
    }
 
    _handleFtStatus(val) {
-      // ── Recovery: status=3 = badge has a stuck transfer from a prior session ─
-      if (this._state === 'wait_mm_ack' && val === 3) {
-         if (this._recovering) {
-            this._finish(new Error('Badge still stuck after recovery (status=3). Factory reset the badge.'))
-            return
-         }
-         this._recovering = true
-         this._slotId = 1000
-         console.log('  (status=3: resuming stuck slot via streaming protocol)')
-         this._clearTimer()
-         this._setState('wait_data_ack', 'Recovery: sending DC_ACK + JPEG')
-         setImmediate(() => {
-            this._sendDcAck()
-            this._sendTransferStart()
-         })
-         return
-      }
-
       // ── Path A: badge assigned a slot directly (fresh/empty badge) ────────
       if (this._state === 'wait_mm_ack' && val > 0 && val < 1000) {
          this._slotId = val
@@ -230,19 +229,10 @@ class FileTransfer extends EventEmitter {
 
       // ── Badge committed to cycling gallery ────────────────────────────────
       if (this._state === 'wait_final_ack' && val === 2) {
+         this._clearTimer()
          this._sendDcAck()
-         if (this._recovering) {
-            this._clearTimer()
-            this._recovering = false
-            console.log('  (recovery committed — restarting with fresh MM announce)')
-            setTimeout(() => {
-               this._sendMediaManagement()
-               this._setState('wait_mm_ack', 'Fresh MM announce after recovery')
-            }, 300)
-         } else {
-            console.log('  (badge committed to cycling gallery ✓)')
-            this._finish(null)
-         }
+         console.log('  (badge committed to cycling gallery ✓)')
+         this._finish(null)
          return
       }
 
@@ -305,6 +295,13 @@ class FileTransfer extends EventEmitter {
                   this._sendDcAck()
                   this._sendSystemInfo()
                })
+            }
+            if (this._pendingMod0cCommit && this._state === 'wait_data_ack') {
+               this._pendingMod0cCommit = false
+               console.log('  (all writes done — now committing deferred mod=0x0C)')
+               this._clearTimer()
+               this._setState('wait_final_ack', 'Waiting for badge to confirm commit', FINAL_STEP_TIMEOUT_MS)
+               setImmediate(() => this._sendSystemInfo())
             }
             return
          }
