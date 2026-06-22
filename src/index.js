@@ -11,6 +11,7 @@ Usage: node src/index.js <command> [options]
 
 Commands:
   send <image-file> [badge-name]   Send an image to the badge
+  battery [badge-name]             Show battery level
   list [badge-name]                List all media stored on the badge
   delete <media-id> [badge-name]   Delete a media file by ID
   info <media-id> [badge-name]     Show metadata for a media file
@@ -25,10 +26,11 @@ async function main() {
    }
 
    switch (cmd) {
-      case 'send':   return cmdSend(rest)
-      case 'list':   return cmdList(rest)
-      case 'delete': return cmdDelete(rest)
-      case 'info':   return cmdInfo(rest)
+      case 'send':    return cmdSend(rest)
+      case 'battery': return cmdBattery(rest)
+      case 'list':    return cmdList(rest)
+      case 'delete':  return cmdDelete(rest)
+      case 'info':    return cmdInfo(rest)
       default:
          console.error(`Unknown command: ${cmd}\n\n${USAGE}`)
          process.exit(1)
@@ -51,6 +53,11 @@ async function cmdSend([imagePath, badgeName = null]) {
 
    try {
       await ble.connect(badgeName)
+      const batt = await ble.readBatteryLevel()
+      if (batt !== null) {
+         const warn = batt < 20 ? ' ⚠ LOW — transfer may fail' : ''
+         console.log(`Battery: ${batt}%${warn}`)
+      }
       console.log(`\nSending ${path.resolve(imagePath)}…\n`)
       await transfer.sendFile(path.resolve(imagePath))
       console.log('\nTransfer complete ✓')
@@ -65,22 +72,36 @@ async function cmdSend([imagePath, badgeName = null]) {
    }
 }
 
+async function cmdBattery([badgeName = null]) {
+   const ble = new BleClient()
+   ble.on('disconnect', onUnexpectedDisconnect)
+   try {
+      await ble.connect(badgeName)
+      const batt = await ble.readBatteryLevel()
+      if (batt === null) {
+         console.log('Battery level unavailable (badge does not expose Battery Service)')
+      } else {
+         console.log(`Battery: ${batt}%`)
+      }
+   } catch (err) {
+      console.error('\nError:', err.message)
+      process.exit(1)
+   } finally {
+      ble.removeListener('disconnect', onUnexpectedDisconnect)
+      await ble.disconnect()
+      process.exit(0)
+   }
+}
+
 async function cmdList([badgeName = null]) {
    const { ble, media } = await connect(badgeName)
    try {
-      const result = await media.requestList()
-      if (Array.isArray(result)) {
-         if (result.length === 0) {
-            console.log('No media files on device.')
-         } else {
-            console.log(`\n${result.length} file(s) on device:\n`)
-            for (const f of result) printFileInfo(f)
-         }
+      const list = await media.requestList()
+      if (list.length === 0) {
+         console.log('No media files on device.')
       } else {
-         // Badge responded but format is not a parsed file list (device capabilities response).
-         console.log('\nDevice capabilities response (raw):')
-         console.log(`  ${result._raw || JSON.stringify(result)}`)
-         if (result._parseError) console.log(`  (parse note: ${result._parseError})`)
+         console.log(`\n${list.length} file(s) on device:\n`)
+         for (const f of list) printFileInfo(f)
       }
    } catch (err) {
       console.error('\nError:', err.message)

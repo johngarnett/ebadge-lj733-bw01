@@ -2,9 +2,11 @@ const noble = require('@abandonware/noble')
 const { EventEmitter } = require('events')
 
 // UUIDs without dashes — noble requires this format on macOS
-const SERVICE_UUID  = '7e400001b5a3f393e0a9e50e24dcca9d'
-const WRITE_UUID    = '7e400002b5a3f393e0a9e50e24dcca9d'
-const NOTIFY_UUID   = '7e400003b5a3f393e0a9e50e24dcca9d'
+const SERVICE_UUID   = '7e400001b5a3f393e0a9e50e24dcca9d'
+const WRITE_UUID     = '7e400002b5a3f393e0a9e50e24dcca9d'
+const NOTIFY_UUID    = '7e400003b5a3f393e0a9e50e24dcca9d'
+const BATT_SVC_UUID  = '180f'
+const BATT_CHAR_UUID = '2a19'
 
 const SCAN_TIMEOUT_MS    = 15000
 const CONNECT_TIMEOUT_MS = 10000
@@ -15,6 +17,7 @@ class BleClient extends EventEmitter {
       this._peripheral      = null
       this._writeChar       = null
       this._notifyChar      = null
+      this._battChar        = null
       this._notifyCallbacks = []
    }
 
@@ -32,6 +35,18 @@ class BleClient extends EventEmitter {
       if (this._peripheral) {
          await this._peripheral.disconnectAsync()
          console.log('Disconnected')
+      }
+   }
+
+   // Read battery level (0-100) from standard BLE Battery Service (0x180F).
+   // Returns null if the badge doesn't expose the service.
+   async readBatteryLevel() {
+      if (!this._battChar) return null
+      try {
+         const data = await this._battChar.readAsync()
+         return data[0]
+      } catch {
+         return null
       }
    }
 
@@ -118,14 +133,15 @@ class BleClient extends EventEmitter {
    async _setupCharacteristics() {
       const { characteristics } = await this._peripheral
          .discoverSomeServicesAndCharacteristicsAsync(
-            [SERVICE_UUID],
-            [WRITE_UUID, NOTIFY_UUID]
+            [SERVICE_UUID, BATT_SVC_UUID],
+            [WRITE_UUID, NOTIFY_UUID, BATT_CHAR_UUID]
          )
 
       for (const char of characteristics) {
          const uuid = char.uuid.toLowerCase()
-         if (uuid === WRITE_UUID)  this._writeChar  = char
-         if (uuid === NOTIFY_UUID) this._notifyChar = char
+         if (uuid === WRITE_UUID)     this._writeChar  = char
+         if (uuid === NOTIFY_UUID)    this._notifyChar = char
+         if (uuid === BATT_CHAR_UUID) this._battChar   = char
       }
 
       if (!this._writeChar)  throw new Error('Write characteristic not found')
