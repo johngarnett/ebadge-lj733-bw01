@@ -1,4 +1,8 @@
 node_modules/
+uploads/
+probe_*.js
+8ball.jpg
+logo.jpg
 *.apk
 *.bin
 *.zip

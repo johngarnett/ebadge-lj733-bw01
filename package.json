@@ -7,7 +7,8 @@
     "doc": "docs"
   },
   "scripts": {
-    "send": "node src/index.js"
+    "send": "node src/index.js",
+    "server": "node src/server.js"
   },
   "keywords": [],
   "author": "",
@@ -15,6 +16,8 @@
   "type": "commonjs",
   "dependencies": {
     "@abandonware/noble": "^1.9.2-26",
+    "express": "^4.21.2",
+    "multer": "^1.4.5-lts.1",
     "sharp": "^0.35.2"
   }
 }

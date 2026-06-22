@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Badge Manager</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #f1f5f9;
+      color: #1e293b;
+      min-height: 100vh;
+    }
+
+    /* ── Header ── */
+    header {
+      background: #0f172a;
+      color: #f8fafc;
+      padding: 24px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      flex-wrap: wrap;
+    }
+
+    .badge-identity { flex: 1; min-width: 240px; }
+
+    .badge-title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .badge-title h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+
+    .status-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      transition: background 0.3s;
+    }
+    .status-dot.connected    { background: #22c55e; box-shadow: 0 0 6px #22c55e88; }
+    .status-dot.connecting   { background: #f59e0b; animation: pulse 1.2s infinite; }
+    .status-dot.disconnected { background: #ef4444; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.4; }
+    }
+
+    .badge-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 24px;
+      font-size: 0.82rem;
+      color: #94a3b8;
+    }
+
+    .badge-meta span { display: flex; gap: 5px; }
+    .badge-meta .label { color: #64748b; }
+    .badge-meta .value { color: #cbd5e1; }
+
+    /* ── Battery gauge ── */
+    .battery-section {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .battery-section svg { display: block; }
+
+    .batt-label {
+      font-size: 0.75rem;
+      color: #64748b;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    /* ── Main grid ── */
+    main {
+      padding: 28px 32px;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 20px;
+      max-width: 1200px;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      padding: 24px;
+      box-shadow: 0 1px 3px #0000000d, 0 4px 12px #0000000a;
+    }
+
+    .card h2 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #475569;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 20px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #f1f5f9;
+    }
+
+    /* ── Send card ── */
+    .drop-zone {
+      border: 2px dashed #cbd5e1;
+      border-radius: 10px;
+      padding: 32px 16px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      position: relative;
+    }
+
+    .drop-zone.dragover {
+      border-color: #3b82f6;
+      background: #eff6ff;
+    }
+
+    .drop-zone p { color: #94a3b8; font-size: 0.9rem; margin-bottom: 12px; }
+
+    .drop-zone input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+      width: 100%;
+      height: 100%;
+    }
+
+    .drop-zone .choose-label {
+      display: inline-block;
+      padding: 8px 20px;
+      background: #f1f5f9;
+      border-radius: 6px;
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: #475569;
+      cursor: pointer;
+      transition: background 0.15s;
+      pointer-events: none;
+    }
+
+    .preview-area {
+      margin-top: 16px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .preview-area img {
+      max-width: 180px;
+      max-height: 180px;
+      border-radius: 8px;
+      border: 2px solid #e2e8f0;
+      object-fit: cover;
+    }
+
+    .preview-info {
+      font-size: 0.8rem;
+      color: #94a3b8;
+      text-align: center;
+    }
+
+    /* ── Buttons ── */
+    button {
+      padding: 10px 22px;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+    button:active { transform: scale(0.97); }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    .btn-primary   { background: #3b82f6; color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: #2563eb; }
+
+    .btn-secondary { background: #f1f5f9; color: #475569; }
+    .btn-secondary:hover:not(:disabled) { background: #e2e8f0; }
+
+    /* ── Status messages ── */
+    .status-msg {
+      margin-top: 14px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      display: none;
+    }
+    .status-msg.success { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; display: block; }
+    .status-msg.error   { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; display: block; }
+    .status-msg.info    { background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; display: block; }
+
+    /* ── Spinner ── */
+    .spinner {
+      display: inline-block;
+      width: 18px;
+      height: 18px;
+      border: 2px solid #fff4;
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Device details card ── */
+    .detail-row {
+      display: flex;
+      gap: 12px;
+      padding: 8px 0;
+      border-bottom: 1px solid #f8fafc;
+      font-size: 0.875rem;
+      align-items: baseline;
+    }
+    .detail-row:last-of-type { border-bottom: none; }
+    .detail-row .dlabel { color: #94a3b8; width: 110px; flex-shrink: 0; }
+    .detail-row .dvalue { color: #1e293b; font-weight: 500; word-break: break-all; }
+
+    /* ── Responsive ── */
+    @media (max-width: 600px) {
+      header { padding: 20px 16px; }
+      main   { padding: 16px; }
+      .battery-section svg { width: 90px; height: 90px; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="badge-identity">
+    <div class="badge-title">
+      <div id="status-dot" class="status-dot disconnected"></div>
+      <h1 id="badge-name">—</h1>
+    </div>
+    <div class="badge-meta">
+      <span><span class="label">ID</span><span class="value" id="badge-addr">—</span></span>
+      <span><span class="label">Firmware</span><span class="value" id="badge-fw">—</span></span>
+      <span><span class="label">Hardware</span><span class="value" id="badge-hw">—</span></span>
+      <span><span class="label">Model</span><span class="value" id="badge-model">—</span></span>
+    </div>
+  </div>
+
+  <div class="battery-section">
+    <svg id="batt-svg" viewBox="0 0 120 120" width="120" height="120">
+      <circle cx="60" cy="60" r="45" fill="none" stroke="#1e3a5f" stroke-width="10"/>
+      <circle id="batt-arc" cx="60" cy="60" r="45" fill="none" stroke="#334155"
+        stroke-width="10" stroke-linecap="round"
+        stroke-dasharray="0 282.74"
+        transform="rotate(-90 60 60)"/>
+      <text id="batt-pct" x="60" y="67" text-anchor="middle"
+        font-size="22" font-weight="700" fill="#64748b" font-family="system-ui">—</text>
+    </svg>
+    <span class="batt-label">Battery</span>
+  </div>
+</header>
+
+<main>
+
+  <!-- Send Image -->
+  <div class="card">
+    <h2>Send Image</h2>
+    <div class="drop-zone" id="drop-zone">
+      <p>Drag &amp; drop an image here</p>
+      <span class="choose-label">Choose File</span>
+      <input type="file" id="file-input" accept="image/*">
+    </div>
+    <div class="preview-area" id="preview-area" style="display:none">
+      <img id="preview-img" src="" alt="preview">
+      <div class="preview-info" id="preview-info"></div>
+      <button class="btn-primary" id="send-btn">Send to Badge</button>
+    </div>
+    <div class="status-msg" id="send-status"></div>
+  </div>
+
+  <!-- Device Details -->
+  <div class="card">
+    <h2>Device Details</h2>
+    <div id="detail-rows">
+      <div class="detail-row"><span class="dlabel">Name</span><span class="dvalue" id="d-name">—</span></div>
+      <div class="detail-row"><span class="dlabel">BT ID</span><span class="dvalue" id="d-addr">—</span></div>
+      <div class="detail-row"><span class="dlabel">Manufacturer</span><span class="dvalue" id="d-mfr">—</span></div>
+      <div class="detail-row"><span class="dlabel">Firmware</span><span class="dvalue" id="d-fw">—</span></div>
+      <div class="detail-row"><span class="dlabel">Hardware</span><span class="dvalue" id="d-hw">—</span></div>
+      <div class="detail-row"><span class="dlabel">Model</span><span class="dvalue" id="d-model">—</span></div>
+      <div class="detail-row"><span class="dlabel">Screen</span><span class="dvalue" id="d-screen">—</span></div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+  const POLL_INTERVAL_MS = 30_000
+  const C = 2 * Math.PI * 45  // arc circumference for r=45
+
+  // ── Battery gauge ────────────────────────────────────────────────────────────
+
+  function battColor(pct) {
+    if (pct > 60) return '#22c55e'
+    if (pct > 20) return '#f59e0b'
+    return '#ef4444'
+  }
+
+  function updateBattGauge(pct) {
+    const arc   = document.getElementById('batt-arc')
+    const label = document.getElementById('batt-pct')
+    if (pct === null || pct === undefined) {
+      arc.setAttribute('stroke-dasharray', '0 ' + C)
+      arc.setAttribute('stroke', '#334155')
+      label.textContent = '—'
+      label.setAttribute('fill', '#64748b')
+      return
+    }
+    const filled = C * pct / 100
+    const gap    = C - filled
+    const color  = battColor(pct)
+    arc.setAttribute('stroke-dasharray', filled.toFixed(2) + ' ' + gap.toFixed(2))
+    arc.setAttribute('stroke', color)
+    label.textContent = pct + '%'
+    label.setAttribute('fill', color)
+  }
+
+  // ── Status / header population ───────────────────────────────────────────────
+
+  function applyStatus(data) {
+    // Connection indicator
+    const dot = document.getElementById('status-dot')
+    dot.className = 'status-dot ' + (data.connected ? 'connected' : data.connecting ? 'connecting' : 'disconnected')
+
+    // Header
+    setText('badge-name', data.name || (data.connecting ? 'Connecting…' : 'Not connected'))
+    setText('badge-addr', data.address || '—')
+    setText('badge-fw',   data.firmware || '—')
+    setText('badge-hw',   data.hardware || '—')
+    setText('badge-model', data.manufacturer || '—')
+
+    // Battery
+    updateBattGauge(data.battery)
+
+    // Device details card
+    setText('d-name',    data.name || '—')
+    setText('d-addr',    data.address || '—')
+    setText('d-mfr',     data.manufacturer || '—')
+    setText('d-fw',      data.firmware || '—')
+    setText('d-hw',      data.hardware || '—')
+    setText('d-model',   data.model || '—')
+    setText('d-screen',  data.screenWidth ? `${data.screenWidth} × ${data.screenHeight} px` : '—')
+  }
+
+  function setText(id, val) {
+    const el = document.getElementById(id)
+    if (el) el.textContent = val
+  }
+
+  async function loadStatus() {
+    try {
+      const res  = await fetch('/api/status')
+      const data = await res.json()
+      applyStatus(data)
+    } catch (err) {
+      document.getElementById('status-dot').className = 'status-dot disconnected'
+    }
+  }
+
+  // ── File upload + send ───────────────────────────────────────────────────────
+
+  function formatBytes(n) {
+    if (n < 1024)       return n + ' B'
+    if (n < 1024*1024)  return (n / 1024).toFixed(1) + ' KB'
+    return (n / (1024*1024)).toFixed(2) + ' MB'
+  }
+
+  let selectedFile = null
+
+  function showPreview(file) {
+    selectedFile = file
+    const reader = new FileReader()
+    reader.onload = e => {
+      document.getElementById('preview-img').src = e.target.result
+    }
+    reader.readAsDataURL(file)
+    document.getElementById('preview-info').textContent =
+      `${file.name} (${formatBytes(file.size)})`
+    document.getElementById('preview-area').style.display = 'flex'
+    document.getElementById('send-status').className = 'status-msg'
+  }
+
+  const dropZone  = document.getElementById('drop-zone')
+  const fileInput = document.getElementById('file-input')
+
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files[0]) showPreview(fileInput.files[0])
+  })
+
+  dropZone.addEventListener('dragover', e => {
+    e.preventDefault()
+    dropZone.classList.add('dragover')
+  })
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'))
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault()
+    dropZone.classList.remove('dragover')
+    const file = e.dataTransfer.files[0]
+    if (file) showPreview(file)
+  })
+
+  document.getElementById('send-btn').addEventListener('click', async () => {
+    if (!selectedFile) return
+    const btn    = document.getElementById('send-btn')
+    const status = document.getElementById('send-status')
+
+    btn.disabled = true
+    btn.innerHTML = '<span class="spinner"></span>Sending…'
+    status.className = 'status-msg info'
+    status.textContent = 'Transferring image to badge — this takes ~15 s…'
+
+    const form = new FormData()
+    form.append('image', selectedFile)
+
+    try {
+      const res  = await fetch('/api/send', { method: 'POST', body: form })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Transfer failed')
+      status.className = 'status-msg success'
+      status.textContent = 'Image sent successfully!'
+      // Refresh battery after transfer
+      loadStatus()
+    } catch (err) {
+      status.className = 'status-msg error'
+      status.textContent = err.message
+    } finally {
+      btn.disabled = false
+      btn.textContent = 'Send to Badge'
+    }
+  })
+
+  // ── Init — adaptive polling ──────────────────────────────────────────────────
+  // Poll every 2 s while disconnected/connecting, slow down to 30 s once connected.
+
+  let pollTimer = null
+
+  async function scheduledLoad() {
+    try {
+      const res  = await fetch('/api/status')
+      const data = await res.json()
+      applyStatus(data)
+      pollTimer = setTimeout(scheduledLoad, data.connected ? POLL_INTERVAL_MS : 2000)
+    } catch {
+      document.getElementById('status-dot').className = 'status-dot disconnected'
+      pollTimer = setTimeout(scheduledLoad, 5000)
+    }
+  }
+
+  scheduledLoad()
+</script>
+</body>
+</html>
