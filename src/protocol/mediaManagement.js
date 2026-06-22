@@ -3,7 +3,7 @@
 // the actual badge protocol via snoop log capture. Use with caution.
 
 const { EventEmitter } = require('events')
-const { MODULE, CMD, buildPacket, buildCompactPacket, buildModuleAck, parseNotification, dcAckError } = require('./packet')
+const { MODULE, CMD, buildPacket, buildModuleAck, parseNotification, dcAckError } = require('./packet')
 
 const CMD_MEDIA = {
    LIST_REQUEST:                0x00,
@@ -28,8 +28,7 @@ class MediaManagement extends EventEmitter {
    }
 
    requestList() {
-      // List query uses 8-byte compact format with service=0x20 (verified from snoop log).
-      return this._sendCompact(CMD_MEDIA.LIST_REQUEST, CMD_MEDIA.LIST_RESPONSE, parseMediaList)
+      return this._send(CMD_MEDIA.LIST_REQUEST, CMD_MEDIA.LIST_RESPONSE, null, parseMediaList)
    }
 
    requestInfo(mediaId) {
@@ -63,22 +62,6 @@ class MediaManagement extends EventEmitter {
       })
    }
 
-   // Compact 8-byte query (service=0x20) used for list/info requests (verified from snoop log).
-   _sendCompact(cmdOut, cmdIn, parser) {
-      if (this._pending) {
-         return Promise.reject(new Error('A media management command is already in progress'))
-      }
-      return new Promise((resolve, reject) => {
-         const timer = setTimeout(() => {
-            this._pending = null
-            reject(new Error(`Timeout waiting for media command 0x${cmdOut.toString(16)} response`))
-         }, CMD_TIMEOUT_MS)
-
-         this._pending = { cmdOut, cmdIn, resolve, reject, timer, parser }
-         this._ble.write(buildCompactPacket(MODULE.MEDIA_MANAGEMENT, cmdOut))
-      })
-   }
-
    _onNotify(buf) {
       const p = this._pending
       if (!p) return
@@ -107,13 +90,10 @@ class MediaManagement extends EventEmitter {
       this._pending = null
       clearTimeout(p.timer)
 
-      console.log(`  [list raw] ${buf.toString('hex')}`)
-
       try {
          p.resolve(p.parser(pkt.payload))
       } catch (parseErr) {
-         // Resolve with raw payload so caller can inspect even if parsing fails.
-         p.resolve({ _raw: pkt.payload.toString('hex'), _parseError: parseErr.message })
+         p.reject(new Error(`Response parse failed: ${parseErr.message}`))
       }
    }
 }
