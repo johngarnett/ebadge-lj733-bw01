@@ -19,6 +19,15 @@ const CMD = {
    VERIFICATION_RESULT: 0x0E,   // FILE_TRANSFER: phone→badge, payload=[fileId 8B][success 1B]
 }
 
+// FileTransferCommand byte values received FROM badge in chunked protocol
+const CMD_FT = {
+   TRANSFER_ACK:        0x02,
+   TRANSFER_NACK:       0x03,
+   NEXT_CHUNK_REQUEST:  0x04,
+   RETRY_REQUEST:       0x05,
+   VERIFICATION_RESULT: 0x0E,
+}
+
 // Error codes from com.baji.protocol.model.ErrorCode (APK decompile)
 const ERROR_NAMES = {
    0x01: 'INVALID_PACKET',
@@ -194,9 +203,44 @@ function buildTransferCompletePayload(fileId, crc32) {
    return buf
 }
 
+// ── Chunked (two-part) transfer builders ─────────────────────────────────────
+// Used when fileSize > SINGLE_PART_MAX (~24 KB). Badge allocates a slot via
+// MEDIA_ID_REQUEST, then receives FILE_DATA chunks (≤200 B each).
+
+// Phone→Badge: request badge to allocate a media slot (module=0x02, cmd=0x0D).
+function buildMediaIdRequest() {
+   return buildPacket(MODULE.MEDIA_MANAGEMENT, 0x0D, Buffer.alloc(0))
+}
+
+// Phone→Badge: announce chunked transfer (module=0x01, cmd=0x00, 14-byte TLV payload).
+// From FileTransferService.buildFileInfoPayload() in APK:
+//   [0x07][fileSize 4B][0x08][fileType=IMAGE(1)][0x0A][funcType=BACKGROUND(1)][0x09][mediaId 4B]
+function buildTransferStartPacketChunked(fileSize, mediaId) {
+   const payload = Buffer.alloc(14)
+   payload[0] = 0x07; payload.writeUInt32BE(fileSize, 1)
+   payload[5] = 0x08; payload[6] = 0x01   // IMAGE
+   payload[7] = 0x0A; payload[8] = 0x01   // BACKGROUND
+   payload[9] = 0x09; payload.writeInt32BE(mediaId, 10)
+   return buildPacket(MODULE.FILE_TRANSFER, 0x00, payload)
+}
+
+// Phone→Badge: one data chunk (module=0x01, cmd=0x0A, ChunkInfo payload).
+// From FileTransferService.buildChunkPayload() in APK:
+//   [fileId 8B][chunkIndex 4B][chunkSize 4B][isLastChunk 1B][chunkData]
+function buildFileDataPacket(fileId, chunkIndex, chunkData, isLastChunk) {
+   const payload = Buffer.allocUnsafe(17 + chunkData.length)
+   payload.writeBigUInt64BE(BigInt(fileId), 0)
+   payload.writeUInt32BE(chunkIndex, 8)
+   payload.writeUInt32BE(chunkData.length, 12)
+   payload[16] = isLastChunk ? 1 : 0
+   chunkData.copy(payload, 17)
+   return buildPacket(MODULE.FILE_TRANSFER, 0x0A, payload)
+}
+
 module.exports = {
    MODULE,
    CMD,
+   CMD_FT,
    CMD_SYS,
    dcAckError,
    buildPacket,
@@ -209,4 +253,7 @@ module.exports = {
    buildTransferCompletePayload,
    buildSystemInfoPayload,
    computeCrc32,
+   buildMediaIdRequest,
+   buildTransferStartPacketChunked,
+   buildFileDataPacket,
 }
