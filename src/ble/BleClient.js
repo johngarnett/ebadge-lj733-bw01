@@ -7,6 +7,11 @@ const WRITE_UUID     = '7e400002b5a3f393e0a9e50e24dcca9d'
 const NOTIFY_UUID    = '7e400003b5a3f393e0a9e50e24dcca9d'
 const BATT_SVC_UUID  = '180f'
 const BATT_CHAR_UUID = '2a19'
+const DIS_SVC_UUID   = '180a'
+const MFR_NAME_UUID  = '2a29'
+const FW_REV_UUID    = '2a26'
+const HW_REV_UUID    = '2a27'
+const MODEL_NUM_UUID = '2a24'
 
 const SCAN_TIMEOUT_MS    = 15000
 const CONNECT_TIMEOUT_MS = 10000
@@ -18,6 +23,10 @@ class BleClient extends EventEmitter {
       this._writeChar       = null
       this._notifyChar      = null
       this._battChar        = null
+      this._mfrNameChar     = null
+      this._fwRevChar       = null
+      this._hwRevChar       = null
+      this._modelNumChar    = null
       this._notifyCallbacks = []
    }
 
@@ -40,6 +49,15 @@ class BleClient extends EventEmitter {
 
    // Read battery level (0-100) from standard BLE Battery Service (0x180F).
    // Returns null if the badge doesn't expose the service.
+   // On macOS, CoreBluetooth never exposes the hardware MAC; address is ''.
+   // Fall back to the stable CoreBluetooth UUID stored in peripheral.id / peripheral.uuid.
+   get address() {
+      if (!this._peripheral) return null
+      const p = this._peripheral
+      return p.address || p.id || p.uuid || null
+   }
+   get advertisedName() { return this._peripheral ? (this._peripheral.advertisement.localName || null) : null }
+
    async readBatteryLevel() {
       if (!this._battChar) return null
       try {
@@ -47,6 +65,21 @@ class BleClient extends EventEmitter {
          return data[0]
       } catch {
          return null
+      }
+   }
+
+   async readDeviceInfo() {
+      const readStr = async (char) => {
+         if (!char) return null
+         try {
+            return (await char.readAsync()).toString('utf8').replace(/\0/g, '').trim() || null
+         } catch { return null }
+      }
+      return {
+         manufacturer: await readStr(this._mfrNameChar),
+         firmware:     await readStr(this._fwRevChar),
+         hardware:     await readStr(this._hwRevChar),
+         model:        await readStr(this._modelNumChar),
       }
    }
 
@@ -133,15 +166,19 @@ class BleClient extends EventEmitter {
    async _setupCharacteristics() {
       const { characteristics } = await this._peripheral
          .discoverSomeServicesAndCharacteristicsAsync(
-            [SERVICE_UUID, BATT_SVC_UUID],
-            [WRITE_UUID, NOTIFY_UUID, BATT_CHAR_UUID]
+            [SERVICE_UUID, BATT_SVC_UUID, DIS_SVC_UUID],
+            [WRITE_UUID, NOTIFY_UUID, BATT_CHAR_UUID, MFR_NAME_UUID, FW_REV_UUID, HW_REV_UUID, MODEL_NUM_UUID]
          )
 
       for (const char of characteristics) {
          const uuid = char.uuid.toLowerCase()
-         if (uuid === WRITE_UUID)     this._writeChar  = char
-         if (uuid === NOTIFY_UUID)    this._notifyChar = char
-         if (uuid === BATT_CHAR_UUID) this._battChar   = char
+         if (uuid === WRITE_UUID)     this._writeChar    = char
+         if (uuid === NOTIFY_UUID)    this._notifyChar   = char
+         if (uuid === BATT_CHAR_UUID) this._battChar     = char
+         if (uuid === MFR_NAME_UUID)  this._mfrNameChar  = char
+         if (uuid === FW_REV_UUID)    this._fwRevChar    = char
+         if (uuid === HW_REV_UUID)    this._hwRevChar    = char
+         if (uuid === MODEL_NUM_UUID) this._modelNumChar = char
       }
 
       if (!this._writeChar)  throw new Error('Write characteristic not found')
