@@ -65,7 +65,8 @@ class FileTransfer extends EventEmitter {
          this._allWritesSent      = false
          this._pendingMod0cCommit = false
          this._pendingCommit = false
-         this._ble.onNotify(buf => this._onNotify(buf))
+         this._notifyHandler = buf => this._onNotify(buf)
+         this._ble.onNotify(this._notifyHandler)
 
          console.log('→ CAPS_QUERY')
          this._ble.write(buildCompactPacket(MODULE.MEDIA_MANAGEMENT, 0x00))
@@ -354,6 +355,10 @@ class FileTransfer extends EventEmitter {
    _finish(err) {
       this._clearTimer()
       this._state   = 'idle'
+      if (this._notifyHandler) {
+         this._ble.removeNotifyListener(this._notifyHandler)
+         this._notifyHandler = null
+      }
       const resolve = this._resolve
       const reject  = this._reject
       this._resolve = null
@@ -371,10 +376,10 @@ class FileTransfer extends EventEmitter {
 
 async function preprocessImage(filePath) {
    const sharp = require('sharp')
-   // Caps field 0x09 reports 0x61A8 = 25,000 as the badge limit.
-   // Phone app sent 25,829 bytes (works); 28,305 bytes hard-crashes the badge.
-   // Staying at 25,000 keeps us safely under the crash threshold.
-   const MAX_FILE_BYTES = 25000
+   // Phone app sent 25,829 bytes (works); 28,305 bytes hard-crashed in earlier testing.
+   // Raising to 30,000 to allow better quality on images that don't compress well.
+   // If the badge crashes, power-cycle it and lower this value.
+   const MAX_FILE_BYTES = 30000
    let quality = 80
    let data = await sharp(filePath)
       .resize(BADGE_IMAGE_SIZE, BADGE_IMAGE_SIZE, { fit: 'cover', position: 'centre' })
