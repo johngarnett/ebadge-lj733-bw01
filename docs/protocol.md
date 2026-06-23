@@ -3,6 +3,9 @@
 Reverse-engineered from `com.legend.smartwatch.electronicbadge.android` (SuperBand app).
 Source: `com.baji.protocol` library within the APK.
 
+NOTE: Much of this protocol does not appear to be used by the SuperBand app and does
+not appear to be implemented by the BW01 badge.
+
 ---
 
 ## BLE GATT Services & Characteristics
