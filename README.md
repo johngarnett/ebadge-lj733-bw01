@@ -2,7 +2,7 @@
 
 Push JPEG images to a BW01 LCD badge (360×360 display) over BLE. Supports a CLI for scripting and a browser-based UI for interactive use.
 
-> **Platform:** macOS only. BLE support depends on `@abandonware/noble`, which uses CoreBluetooth.
+> **Primary platform:** macOS. BLE support depends on `@abandonware/noble`. See [Platform notes](#platform-notes) for Linux and Windows.
 
 ## Installation
 
@@ -65,3 +65,32 @@ Battery level, model, firmware, and screen resolution are displayed once connect
 - Transfers fail if the badge battery is low or the badge is charging — check the battery gauge before sending.
 - The badge cycles through all stored images automatically. New images are appended; there is no way to delete individual images over BLE.
 - The image is sent as a full-color JPEG regardless of the source format.
+
+## Platform notes
+
+### Linux
+
+`@abandonware/noble` supports Linux via BlueZ and works well with no code changes needed.
+
+1. Install BlueZ and build tools:
+   ```bash
+   sudo apt-get install bluetooth libbluetooth-dev build-essential
+   ```
+2. Grant the node binary raw socket access (or run as root):
+   ```bash
+   sudo setcap cap_net_raw+eip $(which node)
+   ```
+3. Run `npm install` and use the app normally.
+
+### Windows
+
+Noble's Windows support is experimental. Two options:
+
+- **`@abandonware/noble` with WinRT** — requires Windows 10+ and a compatible BLE adapter. May work without code changes but is not well tested.
+- **Switch BLE libraries** — replacing `@abandonware/noble` with a library that has mature Windows support (such as `webbluetooth`) would be more reliable but requires rewriting `src/ble/BleClient.js`.
+
+| Platform | Effort | Code changes |
+|----------|--------|-------------|
+| macOS | Ready to run | None |
+| Linux | Low — a few setup steps | None |
+| Windows | High — library may need replacing | `BleClient.js` rewrite if switching libraries |
