@@ -101,6 +101,7 @@
       border-radius: 12px;
       padding: 24px;
       box-shadow: 0 1px 3px #0000000d, 0 4px 12px #0000000a;
+      overflow: hidden;
     }
 
     .card h2 {
@@ -114,7 +115,22 @@
       border-bottom: 1px solid #f1f5f9;
     }
 
-    /* ── Send card ── */
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #f1f5f9;
+    }
+
+    .card-header h2 {
+      margin-bottom: 0;
+      padding-bottom: 0;
+      border-bottom: none;
+    }
+
+    /* ── Send card — drop zone ── */
     .drop-zone {
       border: 2px dashed #cbd5e1;
       border-radius: 10px;
@@ -149,31 +165,85 @@
       font-size: 0.875rem;
       font-weight: 500;
       color: #475569;
-      cursor: pointer;
-      transition: background 0.15s;
       pointer-events: none;
     }
 
-    .preview-area {
-      margin-top: 16px;
+    /* ── Crop mode ── */
+    .crop-wrapper {
+      position: relative;
+      /* bleed to card edges while the title above keeps normal card padding */
+      margin: 0 -24px;
+      width: calc(100% + 48px);
+    }
+
+    #crop-canvas {
+      display: block;
+      width: 100%;
+      height: auto;
+      cursor: crosshair;
+      touch-action: none;
+      border-radius: 0;
+    }
+
+    .crop-footer {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 0 4px;
+    }
+
+    .crop-hint {
+      flex: 1;
+      font-size: 0.75rem;
+      color: #94a3b8;
+      text-align: center;
+    }
+
+    .btn-crop-cancel,
+    .btn-crop-accept {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      padding: 0;
+      font-size: 1.1rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .btn-crop-cancel { background: #ef4444; color: #fff; }
+    .btn-crop-cancel:hover { background: #dc2626; }
+
+    .btn-crop-accept { background: #22c55e; color: #fff; }
+    .btn-crop-accept:hover { background: #16a34a; }
+
+    /* ── Review state ── */
+    .review-area {
       display: flex;
       flex-direction: column;
       align-items: center;
       gap: 12px;
     }
 
-    .preview-area img {
-      max-width: 180px;
-      max-height: 180px;
+    #preview-thumb {
       border-radius: 8px;
       border: 2px solid #e2e8f0;
-      object-fit: cover;
+      display: block;
     }
 
     .preview-info {
       font-size: 0.8rem;
       color: #94a3b8;
       text-align: center;
+    }
+
+    .review-actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      width: 100%;
+      justify-content: flex-end;
     }
 
     /* ── Buttons ── */
@@ -195,6 +265,8 @@
     .btn-secondary { background: #f1f5f9; color: #475569; }
     .btn-secondary:hover:not(:disabled) { background: #e2e8f0; }
 
+    .btn-sm { padding: 7px 14px; font-size: 0.82rem; }
+
     /* ── Status messages ── */
     .status-msg {
       margin-top: 14px;
@@ -206,6 +278,20 @@
     .status-msg.success { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; display: block; }
     .status-msg.error   { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; display: block; }
     .status-msg.info    { background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; display: block; }
+
+    /* ── Transfer result ── */
+    .send-result {
+      margin-top: 10px;
+      display: flex;
+      gap: 20px;
+      padding: 10px 14px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      font-size: 0.875rem;
+    }
+    .result-item { display: flex; gap: 6px; align-items: baseline; }
+    .result-label { color: #94a3b8; }
 
     /* ── Spinner ── */
     .spinner {
@@ -275,19 +361,47 @@
 <main>
 
   <!-- Send Image -->
-  <div class="card">
-    <h2>Send Image</h2>
-    <div class="drop-zone" id="drop-zone">
-      <p>Drag &amp; drop an image here</p>
-      <span class="choose-label">Choose File</span>
-      <input type="file" id="file-input" accept="image/*">
+  <div class="card" id="send-card">
+    <div class="card-header">
+      <h2 id="send-title">Send Image</h2>
     </div>
-    <div class="preview-area" id="preview-area" style="display:none">
-      <img id="preview-img" src="" alt="preview">
+
+    <!-- empty state -->
+    <div id="drop-zone-area">
+      <div class="drop-zone" id="drop-zone">
+        <p>Drag &amp; drop an image here</p>
+        <span class="choose-label">Choose File</span>
+        <input type="file" id="file-input" accept="image/*">
+      </div>
+    </div>
+
+    <!-- crop mode -->
+    <div id="crop-area" style="display:none">
+      <div class="crop-wrapper">
+        <canvas id="crop-canvas"></canvas>
+      </div>
+      <div class="crop-footer">
+        <button class="btn-crop-cancel" id="btn-cancel" title="Cancel">✕</button>
+        <p class="crop-hint">Drag to select · drag inside to move · Shift+click to center<br>Esc to clear</p>
+        <button class="btn-crop-accept" id="btn-accept" title="Accept crop">✓</button>
+      </div>
+    </div>
+
+    <!-- review state -->
+    <div class="review-area" id="review-area" style="display:none">
+      <canvas id="preview-thumb" width="140" height="140"></canvas>
       <div class="preview-info" id="preview-info"></div>
-      <button class="btn-primary" id="send-btn">Send to Badge</button>
+      <div class="review-actions">
+        <button class="btn-secondary btn-sm" id="btn-change">Change Image</button>
+        <button class="btn-primary" id="send-btn">Send to Badge</button>
+      </div>
     </div>
+
     <div class="status-msg" id="send-status"></div>
+    <div class="send-result" id="send-result" style="display:none">
+      <span class="result-item"><span class="result-label">Quality</span><span id="result-quality">—</span></span>
+      <span class="result-item"><span class="result-label">Size</span><span id="result-size">—</span></span>
+    </div>
   </div>
 
   <!-- Device Details -->
@@ -308,7 +422,7 @@
 
 <script>
   const POLL_INTERVAL_MS = 30_000
-  const C = 2 * Math.PI * 45  // arc circumference for r=45
+  const C = 2 * Math.PI * 45
 
   // ── Battery gauge ────────────────────────────────────────────────────────────
 
@@ -329,39 +443,31 @@
       return
     }
     const filled = C * pct / 100
-    const gap    = C - filled
     const color  = battColor(pct)
-    arc.setAttribute('stroke-dasharray', filled.toFixed(2) + ' ' + gap.toFixed(2))
+    arc.setAttribute('stroke-dasharray', filled.toFixed(2) + ' ' + (C - filled).toFixed(2))
     arc.setAttribute('stroke', color)
     label.textContent = pct + '%'
     label.setAttribute('fill', color)
   }
 
-  // ── Status / header population ───────────────────────────────────────────────
+  // ── Status / header ──────────────────────────────────────────────────────────
 
   function applyStatus(data) {
-    // Connection indicator
     const dot = document.getElementById('status-dot')
     dot.className = 'status-dot ' + (data.connected ? 'connected' : data.connecting ? 'connecting' : 'disconnected')
-
-    // Header
-    setText('badge-name', data.name || (data.connecting ? 'Connecting…' : 'Not connected'))
-    setText('badge-addr', data.address || '—')
-    setText('badge-fw',   data.firmware || '—')
-    setText('badge-hw',   data.hardware || '—')
+    setText('badge-name',  data.name || (data.connecting ? 'Connecting…' : 'Not connected'))
+    setText('badge-addr',  data.address || '—')
+    setText('badge-fw',    data.firmware || '—')
+    setText('badge-hw',    data.hardware || '—')
     setText('badge-model', data.manufacturer || '—')
-
-    // Battery
     updateBattGauge(data.battery)
-
-    // Device details card
-    setText('d-name',    data.name || '—')
-    setText('d-addr',    data.address || '—')
-    setText('d-mfr',     data.manufacturer || '—')
-    setText('d-fw',      data.firmware || '—')
-    setText('d-hw',      data.hardware || '—')
-    setText('d-model',   data.model || '—')
-    setText('d-screen',  data.screenWidth ? `${data.screenWidth} × ${data.screenHeight} px` : '—')
+    setText('d-name',   data.name || '—')
+    setText('d-addr',   data.address || '—')
+    setText('d-mfr',    data.manufacturer || '—')
+    setText('d-fw',     data.firmware || '—')
+    setText('d-hw',     data.hardware || '—')
+    setText('d-model',  data.model || '—')
+    setText('d-screen', data.screenWidth ? `${data.screenWidth} × ${data.screenHeight} px` : '—')
   }
 
   function setText(id, val) {
@@ -369,17 +475,263 @@
     if (el) el.textContent = val
   }
 
-  async function loadStatus() {
-    try {
-      const res  = await fetch('/api/status')
-      const data = await res.json()
-      applyStatus(data)
-    } catch (err) {
-      document.getElementById('status-dot').className = 'status-dot disconnected'
+  // ── Card state machine ───────────────────────────────────────────────────────
+  // States: 'empty' | 'cropping' | 'review'
+
+  const dropArea   = document.getElementById('drop-zone-area')
+  const cropArea   = document.getElementById('crop-area')
+  const reviewArea = document.getElementById('review-area')
+  const sendStatus = document.getElementById('send-status')
+  const sendResult = document.getElementById('send-result')
+
+  function setCardState(state) {
+    dropArea.style.display   = state === 'empty'    ? '' : 'none'
+    cropArea.style.display   = state === 'cropping' ? '' : 'none'
+    reviewArea.style.display = state === 'review'   ? '' : 'none'
+    if (state !== 'review') {
+      sendStatus.className    = 'status-msg'
+      sendResult.style.display = 'none'
     }
   }
 
-  // ── File upload + send ───────────────────────────────────────────────────────
+  // ── Crop canvas ──────────────────────────────────────────────────────────────
+
+  const canvas = document.getElementById('crop-canvas')
+  const ctx    = canvas.getContext('2d')
+
+  let selectedFile = null
+  let cropImg      = null   // HTMLImageElement at natural resolution
+  let cropState    = null   // { x, y, size } in canvas pixels
+  const MIN_CROP   = 20
+
+  let crosshairPt    = null
+  let crosshairTimer = null
+
+  function showCrosshair(x, y) {
+    crosshairPt = { x, y }
+    drawCrop()
+    clearTimeout(crosshairTimer)
+    crosshairTimer = setTimeout(() => { crosshairPt = null; drawCrop() }, 600)
+  }
+
+  function drawCrop() {
+    if (!cropImg) return
+    const w = canvas.width, h = canvas.height
+
+    ctx.drawImage(cropImg, 0, 0, w, h)
+
+    if (cropState) {
+      const { x, y, size } = cropState
+
+      ctx.fillStyle = 'rgba(0,0,0,0.55)'
+      ctx.fillRect(0, 0, w, h)
+
+      // Reveal crop region
+      ctx.save()
+      ctx.beginPath()
+      ctx.rect(x, y, size, size)
+      ctx.clip()
+      ctx.drawImage(cropImg, 0, 0, w, h)
+      ctx.restore()
+
+      // Selection border — alternating white/black dashes visible on any background
+      ctx.lineWidth = 2
+      ctx.setLineDash([6, 6])
+      ctx.strokeStyle = 'white'
+      ctx.lineDashOffset = 0
+      ctx.strokeRect(x, y, size, size)
+      ctx.strokeStyle = 'black'
+      ctx.lineDashOffset = 6
+      ctx.strokeRect(x, y, size, size)
+
+      // Inscribed circle
+      const cx = x + size / 2, cy = y + size / 2
+      ctx.lineWidth = 1.5
+      ctx.strokeStyle = 'white'
+      ctx.lineDashOffset = 0
+      ctx.beginPath()
+      ctx.arc(cx, cy, size / 2, 0, 2 * Math.PI)
+      ctx.stroke()
+      ctx.strokeStyle = 'black'
+      ctx.lineDashOffset = 6
+      ctx.beginPath()
+      ctx.arc(cx, cy, size / 2, 0, 2 * Math.PI)
+      ctx.stroke()
+
+      ctx.setLineDash([])
+      ctx.lineDashOffset = 0
+    }
+
+    // Crosshair: briefly shown after Shift+click centering
+    if (crosshairPt) {
+      const { x: hx, y: hy } = crosshairPt
+      const ARM = 16, GAP = 4
+      ctx.setLineDash([])
+      for (const [col, lw] of [['white', 3.5], ['black', 1.5]]) {
+        ctx.strokeStyle = col
+        ctx.lineWidth   = lw
+        ctx.beginPath()
+        ctx.moveTo(hx - ARM, hy); ctx.lineTo(hx - GAP, hy)
+        ctx.moveTo(hx + GAP, hy); ctx.lineTo(hx + ARM, hy)
+        ctx.moveTo(hx, hy - ARM); ctx.lineTo(hx, hy - GAP)
+        ctx.moveTo(hx, hy + GAP); ctx.lineTo(hx, hy + ARM)
+        ctx.stroke()
+      }
+    }
+  }
+
+  function defaultCrop() {
+    const side = Math.min(canvas.width, canvas.height)
+    cropState = {
+      x:    Math.round((canvas.width  - side) / 2),
+      y:    Math.round((canvas.height - side) / 2),
+      size: side,
+    }
+  }
+
+  function drawThumbnail() {
+    if (!cropImg) return
+    const thumb = document.getElementById('preview-thumb')
+    const tCtx  = thumb.getContext('2d')
+    const tSize = thumb.width  // 140
+
+    if (cropState) {
+      const scaleX = cropImg.naturalWidth  / canvas.width
+      const scaleY = cropImg.naturalHeight / canvas.height
+      const srcX   = Math.round(cropState.x    * scaleX)
+      const srcY   = Math.round(cropState.y    * scaleY)
+      const srcSz  = Math.round(cropState.size * scaleX)
+      tCtx.drawImage(cropImg, srcX, srcY, srcSz, srcSz, 0, 0, tSize, tSize)
+    } else {
+      // No selection — center-crop the full image for the thumbnail preview
+      const natW = cropImg.naturalWidth, natH = cropImg.naturalHeight
+      const srcSz = Math.min(natW, natH)
+      const srcX  = Math.round((natW - srcSz) / 2)
+      const srcY  = Math.round((natH - srcSz) / 2)
+      tCtx.drawImage(cropImg, srcX, srcY, srcSz, srcSz, 0, 0, tSize, tSize)
+    }
+
+    tCtx.strokeStyle = 'rgba(255,255,255,0.7)'
+    tCtx.lineWidth = 1.5
+    tCtx.setLineDash([4, 3])
+    tCtx.beginPath()
+    tCtx.arc(tSize / 2, tSize / 2, tSize / 2 - 1, 0, 2 * Math.PI)
+    tCtx.stroke()
+    tCtx.setLineDash([])
+  }
+
+  // ── Crop drag interaction ─────────────────────────────────────────────────────
+
+  let dragging    = false
+  let dragMode    = 'draw'   // 'draw' | 'move'
+  let dragStartX  = 0, dragStartY  = 0
+  let dragOffsetX = 0, dragOffsetY = 0
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && cropState) {
+      cropState = null
+      drawCrop()
+    }
+  })
+
+  function canvasPt(e) {
+    const rect = canvas.getBoundingClientRect()
+    const src  = e.touches ? e.touches[0] : e
+    return {
+      x: (src.clientX - rect.left) * (canvas.width  / rect.width),
+      y: (src.clientY - rect.top)  * (canvas.height / rect.height),
+    }
+  }
+
+  function isInsideCrop(x, y) {
+    if (!cropState) return false
+    return x >= cropState.x && x <= cropState.x + cropState.size &&
+           y >= cropState.y && y <= cropState.y + cropState.size
+  }
+
+  function startDrag(e, shiftKey) {
+    const pt = canvasPt(e)
+    dragStartX = pt.x
+    dragStartY = pt.y
+
+    if (shiftKey && cropState) {
+      // Shift+click: reposition the bounding box so the clicked point is its center
+      const half = cropState.size / 2
+      const x = Math.max(0, Math.min(pt.x - half, canvas.width  - cropState.size))
+      const y = Math.max(0, Math.min(pt.y - half, canvas.height - cropState.size))
+      cropState = { x, y, size: cropState.size }
+      showCrosshair(pt.x, pt.y)
+      dragging = false
+      return
+    }
+
+    if (cropState && isInsideCrop(pt.x, pt.y)) {
+      dragMode    = 'move'
+      dragOffsetX = pt.x - cropState.x
+      dragOffsetY = pt.y - cropState.y
+    } else {
+      dragMode = 'draw'
+    }
+    dragging = true
+  }
+
+  function moveDrag(e) {
+    if (!dragging) return
+    if (e.cancelable) e.preventDefault()
+    const pt = canvasPt(e)
+
+    if (dragMode === 'move') {
+      const x = Math.max(0, Math.min(pt.x - dragOffsetX, canvas.width  - cropState.size))
+      const y = Math.max(0, Math.min(pt.y - dragOffsetY, canvas.height - cropState.size))
+      cropState = { x, y, size: cropState.size }
+    } else {
+      const dx   = pt.x - dragStartX
+      const dy   = pt.y - dragStartY
+      const size = Math.max(MIN_CROP, Math.max(Math.abs(dx), Math.abs(dy)))
+      const x    = Math.max(0, Math.min(dx >= 0 ? dragStartX : dragStartX - size, canvas.width  - size))
+      const y    = Math.max(0, Math.min(dy >= 0 ? dragStartY : dragStartY - size, canvas.height - size))
+      cropState = { x, y, size }
+    }
+    drawCrop()
+  }
+
+  canvas.addEventListener('mousedown', e => startDrag(e, e.shiftKey))
+  canvas.addEventListener('mousemove', e => {
+    if (dragging) {
+      moveDrag(e)
+    } else {
+      canvas.style.cursor = (cropState && isInsideCrop(...Object.values(canvasPt(e)))) ? 'move' : 'crosshair'
+    }
+  })
+  canvas.addEventListener('mouseup',    () => { dragging = false })
+  canvas.addEventListener('mouseleave', () => { dragging = false })
+
+  canvas.addEventListener('touchstart', e => { e.preventDefault(); startDrag(e, false) }, { passive: false })
+  canvas.addEventListener('touchmove',  moveDrag, { passive: false })
+  canvas.addEventListener('touchend',   () => { dragging = false })
+
+  // ── Cancel / Accept / Change ─────────────────────────────────────────────────
+
+  document.getElementById('btn-cancel').addEventListener('click', () => {
+    selectedFile = null
+    cropImg      = null
+    cropState    = null
+    setCardState('empty')
+  })
+
+  document.getElementById('btn-accept').addEventListener('click', () => {
+    drawThumbnail()
+    setCardState('review')
+  })
+
+  document.getElementById('btn-change').addEventListener('click', () => {
+    selectedFile = null
+    cropImg      = null
+    cropState    = null
+    setCardState('empty')
+  })
+
+  // ── File selection ───────────────────────────────────────────────────────────
 
   function formatBytes(n) {
     if (n < 1024)       return n + ' B'
@@ -387,87 +739,104 @@
     return (n / (1024*1024)).toFixed(2) + ' MB'
   }
 
-  let selectedFile = null
-
-  function showPreview(file) {
+  function showCropMode(file) {
     selectedFile = file
-    const reader = new FileReader()
-    reader.onload = e => {
-      document.getElementById('preview-img').src = e.target.result
+    setText('preview-info', `${file.name} (${formatBytes(file.size)})`)
+
+    const url = URL.createObjectURL(file)
+    cropImg = new Image()
+    cropImg.onload = () => {
+      URL.revokeObjectURL(url)
+      setCardState('cropping')   // make crop-area visible so it has layout dimensions
+      requestAnimationFrame(() => {
+        canvas.width  = canvas.parentElement.clientWidth
+        canvas.height = Math.round(canvas.width * cropImg.naturalHeight / cropImg.naturalWidth)
+        defaultCrop()
+        drawCrop()
+      })
     }
-    reader.readAsDataURL(file)
-    document.getElementById('preview-info').textContent =
-      `${file.name} (${formatBytes(file.size)})`
-    document.getElementById('preview-area').style.display = 'flex'
-    document.getElementById('send-status').className = 'status-msg'
+    cropImg.src = url
   }
 
   const dropZone  = document.getElementById('drop-zone')
   const fileInput = document.getElementById('file-input')
 
   fileInput.addEventListener('change', () => {
-    if (fileInput.files[0]) showPreview(fileInput.files[0])
+    if (fileInput.files[0]) showCropMode(fileInput.files[0])
   })
-
-  dropZone.addEventListener('dragover', e => {
-    e.preventDefault()
-    dropZone.classList.add('dragover')
-  })
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover') })
   dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'))
   dropZone.addEventListener('drop', e => {
     e.preventDefault()
     dropZone.classList.remove('dragover')
-    const file = e.dataTransfer.files[0]
-    if (file) showPreview(file)
+    if (e.dataTransfer.files[0]) showCropMode(e.dataTransfer.files[0])
   })
 
+  // ── Send ──────────────────────────────────────────────────────────────────────
+
   document.getElementById('send-btn').addEventListener('click', async () => {
-    if (!selectedFile) return
-    const btn    = document.getElementById('send-btn')
-    const status = document.getElementById('send-status')
+    if (!selectedFile || !cropState) return
+    const btn = document.getElementById('send-btn')
 
     btn.disabled = true
     btn.innerHTML = '<span class="spinner"></span>Sending…'
-    status.className = 'status-msg info'
-    status.textContent = 'Transferring image to badge — this takes ~15 s…'
+    sendStatus.className = 'status-msg info'
+    sendStatus.textContent = 'Transferring image to badge — this takes ~15 s…'
 
     const form = new FormData()
     form.append('image', selectedFile)
+    if (cropState) {
+      const scaleX = cropImg.naturalWidth  / canvas.width
+      const scaleY = cropImg.naturalHeight / canvas.height
+      form.append('cropX',    Math.round(cropState.x    * scaleX))
+      form.append('cropY',    Math.round(cropState.y    * scaleY))
+      form.append('cropSize', Math.round(cropState.size * scaleX))
+    }
 
     try {
       const res  = await fetch('/api/send', { method: 'POST', body: form })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Transfer failed')
-      status.className = 'status-msg success'
-      status.textContent = 'Image sent successfully!'
-      // Refresh battery after transfer
+      sendStatus.className = 'status-msg success'
+      sendStatus.textContent = 'Image sent successfully!'
+      setText('result-quality', data.quality + '%')
+      setText('result-size', formatBytes(data.size))
+      sendResult.style.display = 'flex'
       loadStatus()
     } catch (err) {
-      status.className = 'status-msg error'
-      status.textContent = err.message
+      sendStatus.className = 'status-msg error'
+      sendStatus.textContent = err.message
     } finally {
       btn.disabled = false
       btn.textContent = 'Send to Badge'
     }
   })
 
-  // ── Init — adaptive polling ──────────────────────────────────────────────────
-  // Poll every 2 s while disconnected/connecting, slow down to 30 s once connected.
+  // ── Polling ──────────────────────────────────────────────────────────────────
 
-  let pollTimer = null
+  async function loadStatus() {
+    try {
+      const res  = await fetch('/api/status')
+      const data = await res.json()
+      applyStatus(data)
+    } catch {
+      document.getElementById('status-dot').className = 'status-dot disconnected'
+    }
+  }
 
   async function scheduledLoad() {
     try {
       const res  = await fetch('/api/status')
       const data = await res.json()
       applyStatus(data)
-      pollTimer = setTimeout(scheduledLoad, data.connected ? POLL_INTERVAL_MS : 2000)
+      setTimeout(scheduledLoad, data.connected ? POLL_INTERVAL_MS : 2000)
     } catch {
       document.getElementById('status-dot').className = 'status-dot disconnected'
-      pollTimer = setTimeout(scheduledLoad, 5000)
+      setTimeout(scheduledLoad, 5000)
     }
   }
 
+  setCardState('empty')
   scheduledLoad()
 </script>
 </body>
