@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this project is
 
-A Node.js tool for pushing JPEG images to a BW01 e-ink badge over BLE. The badge uses a JL/Jieli LJ733 chip and speaks a proprietary protocol over Nordic UART Service (NUS). The protocol was fully reverse-engineered from a decompiled Android APK (source in `superband_ebadge_src/`).
+A Node.js tool for pushing JPEG images to a BW01 e-ink badge over BLE. The badge uses a JL/Jieli LJ733 chip and speaks a proprietary protocol over Nordic UART Service (NUS). The protocol was discovered by examining Bluetooth snoop traces and by examining the Android APK.
 
 ## Commands
 
@@ -95,7 +95,3 @@ The full JPEG packet is sent as a stream of 487-byte BLE ATT writes via `_writeC
 ### Image preprocessing
 
 `preprocessImage()` in `fileTransfer.js` resizes the input to 360×360, then binary-searches JPEG quality (7 iterations) to find the highest quality whose encoded size is ≤ `SINGLE_PART_MAX` (24996 bytes). It accepts an optional `crop` region `{x, y, size}` in source-image pixels applied before resize.
-
-## APK source
-
-`superband_ebadge_src/sources/` contains the full decompiled APK. App-specific code lives in `defpackage/` (obfuscated class names) and `xfkj/fitpro/`. The OTA/firmware update path writes firmware zips to `/sdcard/Android/data/xfkj.fitpro/files/OTA/<display_name>.zip`.
