@@ -66,6 +66,19 @@ Battery level, model, firmware, and screen resolution are displayed once connect
 - The badge cycles through all stored images automatically. New images are appended; there is no way to delete individual images over BLE.
 - The image is sent as a full-color JPEG regardless of the source format.
 
+## Device details
+
+This app was developed and tested targeting the following hardware and firmware:
+
+| Field | Value |
+|-------|-------|
+| Name | BW01 |
+| BT ID | `343a438cf21b794d5d47960427d7785c` |
+| Manufacturer | LJ733_V1_BadgeOK |
+| Firmware | V33940 |
+| Hardware | LJ733_MB_V1.1 |
+| Screen | 360 × 360 px |
+
 ## Platform notes
 
 ### Linux
