@@ -1,6 +1,6 @@
 # ebadge
 
-Push JPEG images to a BW01 e-ink badge (360×360 display) over BLE. Supports a CLI for scripting and a browser-based UI for interactive use.
+Push JPEG images to a BW01 LCD badge (360×360 display) over BLE. Supports a CLI for scripting and a browser-based UI for interactive use.
 
 > **Platform:** macOS only. BLE support depends on `@abandonware/noble`, which uses CoreBluetooth.
 

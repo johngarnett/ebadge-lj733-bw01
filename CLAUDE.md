@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this project is
 
-A Node.js tool for pushing JPEG images to a BW01 e-ink badge over BLE. The badge uses a JL/Jieli LJ733 chip and speaks a proprietary protocol over Nordic UART Service (NUS). The protocol was discovered by examining Bluetooth snoop traces and by examining the Android APK.
+A Node.js tool for pushing JPEG images to a BW01 LCD badge over BLE. The badge uses a JL/Jieli LJ733 chip and speaks a proprietary protocol over Nordic UART Service (NUS). The protocol was discovered by examining Bluetooth snoop traces and by examining the Android APK.
 
 ## Commands
 
