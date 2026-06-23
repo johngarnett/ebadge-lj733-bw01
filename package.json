@@ -1,7 +1,7 @@
 {
   "name": "ebadge",
   "version": "1.0.0",
-  "description": "I have an electronic badge with a 360x360 display which communicates with a phone application via bluetooth. The phone application is able to push JPEG images to the badge which then shows the image.",
+  "description": "Push JPEG images to an LJ733 / BW01 electronic badge (ebadge).",
   "main": "index.js",
   "directories": {
     "doc": "docs"
