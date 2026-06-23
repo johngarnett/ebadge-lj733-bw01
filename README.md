@@ -16,6 +16,12 @@ This app was developed and tested targeting the following hardware and firmware:
 | Hardware | LJ733\_MB\_V1.1 |
 | Screen | 360 × 360 px |
 
+## Other badges
+
+If you are looking for code to control an E87 badge (BJ-1), then see this github project instead:
+
+  https://github.com/hybridherbst/web-bluetooth-e87
+
 ## Installation
 
 ```bash
