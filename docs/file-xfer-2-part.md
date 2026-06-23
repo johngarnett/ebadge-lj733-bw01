@@ -6,6 +6,10 @@ in a single stream. The APK implements a separate chunked protocol using `FILE_D
 packets where the badge pulls 200-byte chunks one at a time. This plan implements that protocol
 so larger images (richer detail) can be sent without crashing the badge.
 
+## NOTE
+
+This plan is included for reference only. I was unable to make this protocol work with the LJ733 badge.
+
 ---
 
 ## Protocol Discovered from APK Decompile
