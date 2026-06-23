@@ -38,11 +38,4 @@ async function queryCaps(ble) {
    }
 }
 
-async function queryStorage(ble) {
-   const payload = await queryCompact(ble, MODULE.SYSTEM_INFO)
-   return {
-      usedBytes: payload.readUInt32BE(2),
-   }
-}
-
-module.exports = { queryCaps, queryStorage }
+module.exports = { queryCaps }

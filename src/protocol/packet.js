@@ -91,7 +91,7 @@ function buildModuleAck(moduleId) {
    return Buffer.from([0xDC, 0x00, 0x05, svc, moduleId, 0x00, arg, 0x01])
 }
 
-// Build a compact 8-byte query packet (verified from snoop: list/info requests use this format).
+// Build a compact 8-byte query packet (verified from snoop: used for CAPS_QUERY and STORAGE_QUERY).
 // Layout: [CD][00][05][20][01][module][cmd][00]
 function buildCompactPacket(moduleId, cmd) {
    return Buffer.from([0xCD, 0x00, 0x05, 0x20, 0x01, moduleId, cmd & 0xFF, 0x00])
@@ -135,7 +135,7 @@ function parseNotification(buf) {
 // MEDIA_MANAGEMENT pre-announce payload (16 bytes).
 // Bytes 10-11 carry (fileSize + 4) as a big-endian 16-bit value.
 // Verified from snoop: 25829-byte JPEG → bytes[10-11] = 0x64E9 (= 25833 = 25829+4).
-// The +4 corresponds to the 4-byte trailing field at the end of the two-part transfer.
+// The +4 accounts for the 4-byte last4 checksum field appended after the JPEG data.
 function buildMediaManagementPayload(fileSize) {
    const buf = Buffer.from([
       0x00, 0x15, 0xa2, 0x02,
@@ -154,8 +154,8 @@ function computeCrc32(jpegData) {
 
 // TRANSFER_START payload: [0x01][fileSize BE 4 bytes][jpeg_data][last4 BE 4 bytes]
 // last4 = bytesum(magic1 + fileSize_bytes + jpeg) as uint32 BE.
-// The badge validates last4 on receipt before accepting the commit (SYSTEM_INFO).
-// Missing last4 causes the badge to send FT status=1 and reject the SYSTEM_INFO commit.
+// The badge validates last4 before accepting the SYSTEM_INFO commit.
+// Without last4 the badge rejects the commit even after sending status=1001.
 function buildTransferStartPayload(jpegData) {
    const sz = jpegData.length
    let bsum = 1  // magic1=0x01

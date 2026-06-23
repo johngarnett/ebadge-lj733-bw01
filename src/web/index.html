@@ -459,7 +459,7 @@
     setText('badge-addr',  data.address || '—')
     setText('badge-fw',    data.firmware || '—')
     setText('badge-hw',    data.hardware || '—')
-    setText('badge-model', data.manufacturer || '—')
+    setText('badge-model', data.model || '—')
     updateBattGauge(data.battery)
     setText('d-name',   data.name || '—')
     setText('d-addr',   data.address || '—')
@@ -785,13 +785,11 @@
 
     const form = new FormData()
     form.append('image', selectedFile)
-    if (cropState) {
-      const scaleX = cropImg.naturalWidth  / canvas.width
-      const scaleY = cropImg.naturalHeight / canvas.height
-      form.append('cropX',    Math.round(cropState.x    * scaleX))
-      form.append('cropY',    Math.round(cropState.y    * scaleY))
-      form.append('cropSize', Math.round(cropState.size * scaleX))
-    }
+    const scaleX = cropImg.naturalWidth  / canvas.width
+    const scaleY = cropImg.naturalHeight / canvas.height
+    form.append('cropX',    Math.round(cropState.x    * scaleX))
+    form.append('cropY',    Math.round(cropState.y    * scaleY))
+    form.append('cropSize', Math.round(cropState.size * scaleX))
 
     try {
       const res  = await fetch('/api/send', { method: 'POST', body: form })

@@ -5,12 +5,10 @@ const { EventEmitter } = require('events')
 const SERVICE_UUID   = '7e400001b5a3f393e0a9e50e24dcca9d'
 const WRITE_UUID     = '7e400002b5a3f393e0a9e50e24dcca9d'
 const NOTIFY_UUID    = '7e400003b5a3f393e0a9e50e24dcca9d'
-// Secondary notify characteristic: APK labels it "receive log data channel"
-// but it carries badge status/ready signals needed to unlock management commands.
+// Secondary notify characteristic: APK labels it "receive log data channel";
+// also carries badge status/ready signals during file transfer.
 const LOG_NOTIFY_UUID = '7e400004b5a3f393e0a9e50e24dcca9d'
-const BATT_SVC_UUID  = '180f'
 const BATT_CHAR_UUID = '2a19'
-const DIS_SVC_UUID   = '180a'
 const MFR_NAME_UUID  = '2a29'
 const FW_REV_UUID    = '2a26'
 const HW_REV_UUID    = '2a27'
