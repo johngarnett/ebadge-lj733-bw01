@@ -20,7 +20,15 @@ npm run server [-- BW01]
 # then open http://localhost:3000
 ```
 
-No test suite. No linter configured.
+No linter configured.
+
+## Tests
+
+```bash
+npm test
+```
+
+Unit tests cover all pure functions in `src/protocol/packet.js` (packet builders, parser, checksums). No BLE hardware needed. Requires Node 22.2+ for `zlib.crc32`.
 
 ## Architecture
 
