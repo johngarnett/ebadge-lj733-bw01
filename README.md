@@ -64,4 +64,4 @@ Battery level, model, firmware, and screen resolution are displayed once connect
 
 - Transfers fail if the badge battery is low or the badge is charging — check the battery gauge before sending.
 - The badge cycles through all stored images automatically. New images are appended; there is no way to delete individual images over BLE.
-- The image is always converted to grayscale JPEG regardless of the source format.
+- The image is sent as a full-color JPEG regardless of the source format.
