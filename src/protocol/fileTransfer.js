@@ -2,18 +2,16 @@ const path = require('path')
 const { EventEmitter } = require('events')
 
 const {
-   MODULE, CMD, CMD_FT, CMD_SYS,
+   MODULE, CMD_SYS,
    buildPacket, buildDcAck, buildCompactPacket, buildModuleAck, parseNotification,
    buildMediaManagementPayload, buildTransferStartPayload,
-   buildSystemInfoPayload, buildTransferCompletePayload,
-   buildMediaIdRequest, buildTransferStartPacketChunked, buildFileDataPacket,
+   buildSystemInfoPayload,
    computeCrc32,
 } = require('./packet')
 
-const BADGE_IMAGE_SIZE = 360
-const WRITE_CHUNK_SIZE   = 487
-const CHUNK_SIZE         = 200    // APK MAX_CHUNK_SIZE
-const SINGLE_PART_MAX    = 24000  // files above this use chunked protocol
+const BADGE_IMAGE_SIZE      = 360
+const WRITE_CHUNK_SIZE      = 487
+const SINGLE_PART_MAX       = 24996
 const STEP_TIMEOUT_MS       = 12000
 const FINAL_STEP_TIMEOUT_MS = 30000
 
@@ -49,20 +47,18 @@ class FileTransfer extends EventEmitter {
       this._checksum           = 0
       this._jpegData           = null
       this._allWritesSent      = false
-      this._pendingCommit      = false   // status=1001 arrived while writes in flight
-      this._pendingMod0cCommit = false   // mod=0x0C arrived while writes in flight (Path A)
-      // chunked-transfer state
-      this._fileId  = 0
-      this._mediaId = 0
-      this._chunks  = []
+      this._pendingCommit      = false   // status=1001 arrived while writes still in flight
+      this._pendingMod0cCommit = false   // mod=0x0C arrived while writes still in flight (Path A)
    }
 
-   async sendFile(filePath) {
+   async sendFile(filePath, options = {}) {
       const filename = path.basename(filePath)
       console.log(`Preprocessing ${filename} → ${BADGE_IMAGE_SIZE}×${BADGE_IMAGE_SIZE} JPEG…`)
-      const jpegData = await preprocessImage(filePath)
+      const { data: jpegData, quality } = await preprocessImage(filePath, options.crop || null)
       this._checksum = computeCrc32(jpegData)
       this._jpegData = jpegData
+      this._quality  = quality
+      this._jpegSize = jpegData.length
 
       console.log(`Sending ${filename} (${jpegData.length} bytes, crc32=0x${this._checksum.toString(16).toUpperCase()})`)
 
@@ -76,13 +72,9 @@ class FileTransfer extends EventEmitter {
          this._notifyHandler = buf => this._onNotify(buf)
          this._ble.onNotify(this._notifyHandler)
 
-         if (jpegData.length > SINGLE_PART_MAX) {
-            this._startChunkedTransfer()
-         } else {
-            console.log('→ CAPS_QUERY')
-            this._ble.write(buildCompactPacket(MODULE.MEDIA_MANAGEMENT, 0x00))
-            this._setState('wait_caps', 'Capabilities query sent')
-         }
+         console.log('→ CAPS_QUERY')
+         this._ble.write(buildCompactPacket(MODULE.MEDIA_MANAGEMENT, 0x00))
+         this._setState('wait_caps', 'Capabilities query sent')
       })
    }
 
@@ -124,99 +116,6 @@ class FileTransfer extends EventEmitter {
             this._resetTimer()
          } else {
             console.log(`  ← [wait_storage] unexpected ${pkt.type} [${buf.toString('hex')}]`)
-         }
-         return
-      }
-
-      // ── Chunked transfer states ───────────────────────────────────────────────
-
-      if (this._state === 'wait_media_id') {
-         if (pkt.type === 'cd_packet' && pkt.moduleId === MODULE.MEDIA_MANAGEMENT && pkt.command === 0x0E) {
-            this._clearTimer()
-            // payload: [mediaId 8B BE][success 1B][...optional message]
-            const mediaId = pkt.payload.length >= 8 ? pkt.payload.readInt32BE(4) : 0
-            const ok      = pkt.payload.length >= 9 ? pkt.payload[8] !== 0 : true
-            console.log(`  ← MEDIA_ID_RESPONSE (mediaId=${mediaId}, ok=${ok}) [${pkt.payload.toString('hex')}]`)
-            if (!ok) { this._finish(new Error('Badge refused media ID allocation')); return }
-            this._mediaId = mediaId
-            const pktOut = buildTransferStartPacketChunked(this._jpegData.length, mediaId)
-            console.log(`→ TRANSFER_START (fileSize=${this._jpegData.length}, mediaId=${mediaId})`)
-            this._ble.write(pktOut)
-            this._setState('wait_transfer_ack', 'Waiting for TRANSFER_ACK')
-         } else {
-            console.log(`  ← [wait_media_id] unexpected [${buf.toString('hex')}]`)
-            this._resetTimer()
-         }
-         return
-      }
-
-      if (this._state === 'wait_transfer_ack') {
-         if (pkt.type === 'cd_packet' && pkt.moduleId === MODULE.FILE_TRANSFER) {
-            if (pkt.command === CMD_FT.TRANSFER_ACK) {
-               this._clearTimer()
-               console.log('  ← TRANSFER_ACK — sending chunk 0')
-               this._sendChunk(0)
-               this._setState('wait_chunk_ack', `Chunk 0/${this._chunks.length - 1} sent`)
-            } else if (pkt.command === CMD_FT.TRANSFER_NACK) {
-               this._finish(new Error(`Badge rejected transfer start (NACK) [${buf.toString('hex')}]`))
-            } else {
-               console.log(`  ← [wait_transfer_ack] unexpected cmd=0x${pkt.command.toString(16)} [${buf.toString('hex')}]`)
-               this._resetTimer()
-            }
-         } else {
-            console.log(`  ← [wait_transfer_ack] unexpected [${buf.toString('hex')}]`)
-            this._resetTimer()
-         }
-         return
-      }
-
-      if (this._state === 'wait_chunk_ack') {
-         if (pkt.type !== 'cd_packet' || pkt.moduleId !== MODULE.FILE_TRANSFER) {
-            console.log(`  ← [wait_chunk_ack] ignoring non-FT [${buf.toString('hex')}]`)
-            this._resetTimer()
-            return
-         }
-         if (pkt.command === CMD_FT.NEXT_CHUNK_REQUEST) {
-            this._clearTimer()
-            const nextIdx = pkt.payload.length >= 12 ? pkt.payload.readUInt32BE(8) : 0
-            console.log(`  ← NEXT_CHUNK_REQUEST (chunk ${nextIdx})`)
-            if (nextIdx >= this._chunks.length) {
-               this._finish(new Error(`Badge requested out-of-range chunk ${nextIdx} (total=${this._chunks.length})`))
-               return
-            }
-            this._sendChunk(nextIdx)
-            const msLeft = nextIdx === this._chunks.length - 1 ? FINAL_STEP_TIMEOUT_MS : STEP_TIMEOUT_MS
-            this._setState('wait_chunk_ack', `Chunk ${nextIdx}/${this._chunks.length - 1} sent`, msLeft)
-         } else if (pkt.command === CMD_FT.TRANSFER_ACK) {
-            this._clearTimer()
-            console.log('  ← TRANSFER_ACK (all chunks confirmed)')
-            this._sendTransferComplete()
-            this._setState('wait_verification', 'Waiting for VERIFICATION_RESULT', FINAL_STEP_TIMEOUT_MS)
-         } else if (pkt.command === CMD_FT.RETRY_REQUEST) {
-            const retryIdx = pkt.payload.length >= 12 ? pkt.payload.readUInt32BE(8) : 0
-            console.log(`  ← RETRY_REQUEST (chunk ${retryIdx})`)
-            this._sendChunk(retryIdx)
-            this._resetTimer()
-         } else if (pkt.command === CMD_FT.VERIFICATION_RESULT) {
-            this._clearTimer()
-            console.log('  ← VERIFICATION_RESULT (direct, no TRANSFER_COMPLETE step)')
-            this._handleVerificationResult(pkt.payload)
-         } else if (pkt.command === CMD_FT.TRANSFER_NACK) {
-            this._finish(new Error(`Transfer NACK during chunk send [${buf.toString('hex')}]`))
-         } else {
-            console.log(`  ← [wait_chunk_ack] unexpected cmd=0x${pkt.command.toString(16)} [${buf.toString('hex')}]`)
-            this._resetTimer()
-         }
-         return
-      }
-
-      if (this._state === 'wait_verification') {
-         if (pkt.type === 'cd_packet' && pkt.moduleId === MODULE.FILE_TRANSFER && pkt.command === CMD_FT.VERIFICATION_RESULT) {
-            this._clearTimer()
-            this._handleVerificationResult(pkt.payload)
-         } else {
-            console.log(`  ← [wait_verification] unexpected [${buf.toString('hex')}]`)
-            this._resetTimer()
          }
          return
       }
@@ -355,47 +254,6 @@ class FileTransfer extends EventEmitter {
       console.log(`  (unhandled status=${val} in state ${this._state})`)
    }
 
-   // ── Chunked transfer helpers ────────────────────────────────────────────────
-
-   _startChunkedTransfer() {
-      const total = this._jpegData.length
-      this._chunks = []
-      for (let off = 0; off < total; off += CHUNK_SIZE) {
-         this._chunks.push(this._jpegData.slice(off, off + CHUNK_SIZE))
-      }
-      this._fileId = Date.now()
-      console.log(`  (${total}B → ${this._chunks.length} chunks ≤${CHUNK_SIZE}B, fileId=${this._fileId})`)
-      console.log('→ MEDIA_ID_REQUEST')
-      this._ble.write(buildMediaIdRequest())
-      this._setState('wait_media_id', 'Waiting for media slot from badge')
-   }
-
-   _sendChunk(index) {
-      const chunkData = this._chunks[index]
-      const isLast    = index === this._chunks.length - 1
-      const pkt = buildFileDataPacket(this._fileId, index, chunkData, isLast)
-      console.log(`→ CHUNK ${index}/${this._chunks.length - 1} (${chunkData.length}B, last=${isLast})`)
-      this._ble.write(pkt)
-   }
-
-   _sendTransferComplete() {
-      const payload = buildTransferCompletePayload(this._fileId, this._checksum)
-      const pkt     = buildPacket(MODULE.FILE_TRANSFER, CMD.TRANSFER_COMPLETE, payload)
-      console.log(`→ TRANSFER_COMPLETE (fileId=${this._fileId}, crc32=0x${this._checksum.toString(16).toUpperCase()})`)
-      this._ble.write(pkt)
-   }
-
-   _handleVerificationResult(payload) {
-      // payload: [fileId 8B][success 1B] (9 bytes = result) or [fileId 8B] (8 bytes = request)
-      const success = payload.length >= 9 ? payload[8] !== 0 : false
-      if (success) {
-         console.log('  (badge verified file ✓)')
-         this._finish(null)
-      } else {
-         this._finish(new Error('Badge reported verification failure'))
-      }
-   }
-
    // ── Streaming transfer helpers ──────────────────────────────────────────────
 
    _sendMediaManagement() {
@@ -517,38 +375,57 @@ class FileTransfer extends EventEmitter {
          console.error(`Transfer failed: ${err.message}`)
          if (reject) reject(err)
       } else {
-         if (resolve) resolve()
+         if (resolve) resolve({ quality: this._quality, size: this._jpegSize })
       }
    }
 }
 
 // ── Image preprocessing ───────────────────────────────────────────────────────
 
-async function preprocessImage(filePath) {
+async function preprocessImage(filePath, crop = null) {
    const sharp = require('sharp')
-   // Files ≤ SINGLE_PART_MAX (24 KB) use the streaming protocol.
-   // Files > SINGLE_PART_MAX use the chunked protocol (200-byte FILE_DATA packets),
-   // so there is no hard upper bound — but start at quality=85 and don't compress
-   // past quality=30 to maintain reasonable fidelity.
-   const MAX_QUALITY     = 85
-   const MIN_QUALITY     = 30
-   const STREAM_MAX      = SINGLE_PART_MAX   // keep streaming path safe
-   let quality = MAX_QUALITY
-   let data = await sharp(filePath)
-      .resize(BADGE_IMAGE_SIZE, BADGE_IMAGE_SIZE, { fit: 'cover', position: 'centre' })
-      .jpeg({ quality })
-      .toBuffer()
-   // Only compress down if the file needs to fit in the single-part streaming window.
-   while (data.length > STREAM_MAX && quality > MIN_QUALITY) {
-      quality -= 10
-      data = await sharp(filePath)
-         .resize(BADGE_IMAGE_SIZE, BADGE_IMAGE_SIZE, { fit: 'cover', position: 'centre' })
-         .jpeg({ quality })
-         .toBuffer()
+   const QUALITY_MAX    = 100
+   const QUALITY_MIN    = 1
+   const MAX_ITERATIONS = 7
+
+   // Crop first (if requested), then resize once to raw pixels so each quality
+   // attempt encodes the same pixel data.
+   let pipeline = sharp(filePath)
+   if (crop) {
+      pipeline = pipeline.extract({ left: crop.x, top: crop.y, width: crop.size, height: crop.size })
    }
-   const protocol = data.length > SINGLE_PART_MAX ? 'chunked' : 'streaming'
-   console.log(`  (JPEG quality=${quality}, size=${data.length} bytes, protocol=${protocol})`)
-   return data
+   const { data: pixels, info } = await pipeline
+      .resize(BADGE_IMAGE_SIZE, BADGE_IMAGE_SIZE, { fit: 'cover', position: 'centre' })
+      .raw()
+      .toBuffer({ resolveWithObject: true })
+
+   const rawOpts = { raw: { width: info.width, height: info.height, channels: info.channels } }
+
+   let lo = QUALITY_MIN
+   let hi = QUALITY_MAX
+   let bestData    = null
+   let bestQuality = null
+
+   for (let i = 0; i < MAX_ITERATIONS; i++) {
+      const quality = Math.round((lo + hi) / 2)
+      const data = await sharp(pixels, rawOpts).jpeg({ quality }).toBuffer()
+      const fits = data.length <= SINGLE_PART_MAX
+      console.log(`  quality=${quality}: ${data.length} bytes ${fits ? '✓' : '(too large)'}`)
+      if (fits) {
+         bestData    = data
+         bestQuality = quality
+         lo = quality + 1
+      } else {
+         hi = quality - 1
+      }
+   }
+
+   if (!bestData) {
+      throw new Error(`Cannot compress image to fit within ${SINGLE_PART_MAX} bytes after ${MAX_ITERATIONS} attempts`)
+   }
+
+   console.log(`  → using quality=${bestQuality} (${bestData.length} bytes)`)
+   return { data: bestData, quality: bestQuality }
 }
 
 module.exports = { FileTransfer }

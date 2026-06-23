@@ -148,9 +148,12 @@ app.post('/api/send', upload.single('image'), async (req, res) => {
 
    try {
       fs.writeFileSync(tmpPath, req.file.buffer)
-      await transfer.sendFile(tmpPath)
+      const crop = (req.body.cropX != null)
+         ? { x: Number(req.body.cropX), y: Number(req.body.cropY), size: Number(req.body.cropSize) }
+         : null
+      const { quality, size } = await transfer.sendFile(tmpPath, { crop })
       badge.battery = await ble.readBatteryLevel().catch(() => badge.battery)
-      res.json({ success: true })
+      res.json({ success: true, quality, size })
    } catch (err) {
       res.status(500).json({ error: err.message })
    } finally {
