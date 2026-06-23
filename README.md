@@ -4,6 +4,18 @@ Push JPEG images to a BW01 LCD badge (360×360 display) over BLE. Supports a CLI
 
 > **Primary platform:** macOS. BLE support depends on `@abandonware/noble`. See [Platform notes](#platform-notes) for Linux and Windows.
 
+## Device details
+
+This app was developed and tested targeting the following hardware and firmware:
+
+| Field | Value |
+|-------|-------|
+| Name | BW01 |
+| Manufacturer | LJ733\_V1\_BadgeOK |
+| Firmware | V33940 |
+| Hardware | LJ733\_MB\_V1.1 |
+| Screen | 360 × 360 px |
+
 ## Installation
 
 ```bash
@@ -65,19 +77,6 @@ Battery level, model, firmware, and screen resolution are displayed once connect
 - Transfers fail if the badge battery is low or the badge is charging — check the battery gauge before sending.
 - The badge cycles through all stored images automatically. New images are appended; there is no way to delete individual images over BLE.
 - The image is sent as a full-color JPEG regardless of the source format.
-
-## Device details
-
-This app was developed and tested targeting the following hardware and firmware:
-
-| Field | Value |
-|-------|-------|
-| Name | BW01 |
-| BT ID | `343a438cf21b794d5d47960427d7785c` |
-| Manufacturer | LJ733_V1_BadgeOK |
-| Firmware | V33940 |
-| Hardware | LJ733_MB_V1.1 |
-| Screen | 360 × 360 px |
 
 ## Platform notes
 
