@@ -44,11 +44,9 @@ class FileTransfer extends EventEmitter {
       this._timer         = null
       this._state         = 'idle'
       this._slotId        = 0
-      this._checksum           = 0
-      this._jpegData           = null
-      this._allWritesSent      = false
-      this._pendingCommit      = false   // status=1001 arrived while writes still in flight
-      this._pendingMod0cCommit = false   // mod=0x0C arrived while writes still in flight (Path A)
+      this._checksum      = 0
+      this._jpegData      = null
+      this._allWritesSent = false
    }
 
    async sendFile(filePath, options = {}) {
@@ -66,9 +64,7 @@ class FileTransfer extends EventEmitter {
          this._resolve = resolve
          this._reject  = reject
 
-         this._allWritesSent      = false
-         this._pendingMod0cCommit = false
-         this._pendingCommit      = false
+         this._allWritesSent = false
          this._notifyHandler = buf => this._onNotify(buf)
          this._ble.onNotify(this._notifyHandler)
 
@@ -143,14 +139,9 @@ class FileTransfer extends EventEmitter {
       if (pkt.type === 'cd_packet' && pkt.moduleId === 0x0C && this._state === 'wait_data_ack') {
          console.log(`  ← mod=0x0C (Path A JPEG receipt) — committing [${buf.toString('hex')}]`)
          this._ble.write(buildModuleAck(0x0C))
-         if (this._allWritesSent) {
-            this._clearTimer()
-            this._setState('wait_final_ack', 'Waiting for badge to confirm commit', FINAL_STEP_TIMEOUT_MS)
-            setImmediate(() => this._sendSystemInfo())
-         } else {
-            this._pendingMod0cCommit = true
-            this._resetTimer()
-         }
+         this._clearTimer()
+         this._setState('wait_final_ack', 'Waiting for badge to confirm commit', FINAL_STEP_TIMEOUT_MS)
+         setImmediate(() => this._sendSystemInfo())
          return
       }
 
@@ -212,18 +203,10 @@ class FileTransfer extends EventEmitter {
       }
 
       // ── JPEG verified / ready to commit ───────────────────────────────────
-      // status=1001 can arrive before all ATT writes complete (large-file path).
-      // In that case, defer the commit until writes finish (_pendingCommit flag).
-      // status=1002 means the badge received everything — commit immediately.
-      if (this._state === 'wait_data_ack' && val === 1001 && !this._allWritesSent) {
-         console.log('  (status=1001 mid-transfer ACK — writes still in flight, will commit when done)')
-         this._pendingCommit = true
-         this._sendDcAck()
-         this._resetTimer()
-         return
-      }
-
       if (this._state === 'wait_data_ack' && (val === 1001 || val === 1002)) {
+         if (!this._allWritesSent) {
+            console.error(`  ERROR: status=${val} received before all ATT writes completed — transfer may be corrupt`)
+         }
          this._clearTimer()
          console.log(`  (JPEG complete (status=${val}) — sending DC_ACK + SYSTEM_INFO to commit)`)
          this._setState('wait_final_ack', 'Waiting for badge to confirm commit', FINAL_STEP_TIMEOUT_MS)
@@ -290,28 +273,10 @@ class FileTransfer extends EventEmitter {
       let offset = 0
       let n      = 0
       const total = Math.ceil(buf.length / WRITE_CHUNK_SIZE)
-
       const sendNext = () => {
          if (offset >= buf.length) {
-            console.log(`  (sent ${n}/${total} ATT writes)`)
             this._allWritesSent = true
-            if (this._pendingCommit && this._state === 'wait_data_ack') {
-               this._pendingCommit = false
-               console.log('  (all writes done — now committing deferred status=1001)')
-               this._clearTimer()
-               this._setState('wait_final_ack', 'Waiting for badge to confirm commit', FINAL_STEP_TIMEOUT_MS)
-               setImmediate(() => {
-                  this._sendDcAck()
-                  this._sendSystemInfo()
-               })
-            }
-            if (this._pendingMod0cCommit && this._state === 'wait_data_ack') {
-               this._pendingMod0cCommit = false
-               console.log('  (all writes done — now committing deferred mod=0x0C)')
-               this._clearTimer()
-               this._setState('wait_final_ack', 'Waiting for badge to confirm commit', FINAL_STEP_TIMEOUT_MS)
-               setImmediate(() => this._sendSystemInfo())
-            }
+            console.log(`  (sent ${n}/${total} ATT writes)`)
             return
          }
          const chunk = buf.slice(offset, offset + WRITE_CHUNK_SIZE)
@@ -320,7 +285,6 @@ class FileTransfer extends EventEmitter {
          n++
          setImmediate(sendNext)
       }
-
       sendNext()
    }
 

@@ -3,10 +3,9 @@ const multer  = require('multer')
 const path    = require('path')
 const fs      = require('fs')
 
-const { BleClient }       = require('./ble/BleClient')
-const { FileTransfer }    = require('./protocol/fileTransfer')
-const { MediaManagement } = require('./protocol/mediaManagement')
-const { queryCaps } = require('./protocol/deviceQuery')
+const { BleClient }    = require('./ble/BleClient')
+const { FileTransfer } = require('./protocol/fileTransfer')
+const { queryCaps }    = require('./protocol/deviceQuery')
 
 const PORT        = 3000
 const TARGET_NAME = process.argv[2] || 'BW01'
@@ -23,7 +22,6 @@ app.use(express.static(path.join(__dirname, 'web')))
 
 let ble      = null
 let transfer = null
-let media    = null
 
 const badge = {
    connected:    false,
@@ -51,7 +49,6 @@ async function connectBadge() {
    try {
       ble      = new BleClient()
       transfer = new FileTransfer(ble)
-      media    = new MediaManagement(ble)
 
       ble.once('disconnect', () => {
          badge.connected    = false
@@ -162,33 +159,6 @@ app.post('/api/send', upload.single('image'), async (req, res) => {
    }
 })
 
-app.get('/api/media', async (req, res) => {
-   if (!requireConnected(res) || !requireNotBusy(res)) return
-   badge.busy = true
-   try {
-      const list = await media.requestList()
-      res.json({ files: list })
-   } catch (err) {
-      res.status(500).json({ error: err.message })
-   } finally {
-      badge.busy = false
-   }
-})
-
-app.delete('/api/media/:id', async (req, res) => {
-   if (!requireConnected(res) || !requireNotBusy(res)) return
-   const mediaId = Number(req.params.id)
-   if (!Number.isFinite(mediaId)) return res.status(400).json({ error: 'Invalid media ID' })
-   badge.busy = true
-   try {
-      const result = await media.deleteMedia(mediaId)
-      res.json(result)
-   } catch (err) {
-      res.status(500).json({ error: err.message })
-   } finally {
-      badge.busy = false
-   }
-})
 
 // ── Start ────────────────────────────────────────────────────────────────────
 
