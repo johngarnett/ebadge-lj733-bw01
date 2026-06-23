@@ -5,6 +5,9 @@ const { EventEmitter } = require('events')
 const SERVICE_UUID   = '7e400001b5a3f393e0a9e50e24dcca9d'
 const WRITE_UUID     = '7e400002b5a3f393e0a9e50e24dcca9d'
 const NOTIFY_UUID    = '7e400003b5a3f393e0a9e50e24dcca9d'
+// Secondary notify characteristic: APK labels it "receive log data channel"
+// but it carries badge status/ready signals needed to unlock management commands.
+const LOG_NOTIFY_UUID = '7e400004b5a3f393e0a9e50e24dcca9d'
 const BATT_SVC_UUID  = '180f'
 const BATT_CHAR_UUID = '2a19'
 const DIS_SVC_UUID   = '180a'
@@ -12,7 +15,6 @@ const MFR_NAME_UUID  = '2a29'
 const FW_REV_UUID    = '2a26'
 const HW_REV_UUID    = '2a27'
 const MODEL_NUM_UUID = '2a24'
-
 const SCAN_TIMEOUT_MS    = 15000
 const CONNECT_TIMEOUT_MS = 10000
 
@@ -22,6 +24,7 @@ class BleClient extends EventEmitter {
       this._peripheral      = null
       this._writeChar       = null
       this._notifyChar      = null
+      this._logNotifyChar   = null
       this._battChar        = null
       this._mfrNameChar     = null
       this._fwRevChar       = null
@@ -165,33 +168,40 @@ class BleClient extends EventEmitter {
 
    async _setupCharacteristics() {
       const { characteristics } = await this._peripheral
-         .discoverSomeServicesAndCharacteristicsAsync(
-            [SERVICE_UUID, BATT_SVC_UUID, DIS_SVC_UUID],
-            [WRITE_UUID, NOTIFY_UUID, BATT_CHAR_UUID, MFR_NAME_UUID, FW_REV_UUID, HW_REV_UUID, MODEL_NUM_UUID]
-         )
+         .discoverAllServicesAndCharacteristicsAsync()
 
       for (const char of characteristics) {
          const uuid = char.uuid.toLowerCase()
-         if (uuid === WRITE_UUID)     this._writeChar    = char
-         if (uuid === NOTIFY_UUID)    this._notifyChar   = char
-         if (uuid === BATT_CHAR_UUID) this._battChar     = char
-         if (uuid === MFR_NAME_UUID)  this._mfrNameChar  = char
-         if (uuid === FW_REV_UUID)    this._fwRevChar    = char
-         if (uuid === HW_REV_UUID)    this._hwRevChar    = char
-         if (uuid === MODEL_NUM_UUID) this._modelNumChar = char
+         if (uuid === WRITE_UUID)       this._writeChar      = char
+         if (uuid === NOTIFY_UUID)      this._notifyChar     = char
+         if (uuid === LOG_NOTIFY_UUID)  this._logNotifyChar  = char
+         if (uuid === BATT_CHAR_UUID)   this._battChar       = char
+         if (uuid === MFR_NAME_UUID)    this._mfrNameChar    = char
+         if (uuid === FW_REV_UUID)      this._fwRevChar      = char
+         if (uuid === HW_REV_UUID)      this._hwRevChar      = char
+         if (uuid === MODEL_NUM_UUID)   this._modelNumChar   = char
       }
 
       if (!this._writeChar)  throw new Error('Write characteristic not found')
       if (!this._notifyChar) throw new Error('Notify characteristic not found')
 
-      await this._notifyChar.subscribeAsync()
-      this._notifyChar.on('data', buf => {
+      const dispatch = buf => {
          if (process.env.DEBUG) console.log('← raw:', buf.toString('hex'))
          for (const fn of this._notifyCallbacks) fn(buf)
-      })
+      }
+
+      await this._notifyChar.subscribeAsync()
+      this._notifyChar.on('data', dispatch)
+
+      if (this._logNotifyChar) {
+         await this._logNotifyChar.subscribeAsync()
+         this._logNotifyChar.on('data', dispatch)
+         console.log('Log channel (7e400004) subscribed')
+      }
 
       console.log('Characteristics ready')
    }
+
 }
 
 module.exports = { BleClient, SERVICE_UUID, WRITE_UUID, NOTIFY_UUID }
