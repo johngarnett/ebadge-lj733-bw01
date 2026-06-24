@@ -18,7 +18,7 @@ This app was developed and tested targeting the following hardware and firmware:
 
 ## Other badges
 
-If you are looking for code to control an E87 badge (BJ-1), then see this github project instead:
+If you are looking for code to control an E87 badge, then see this github project instead:
 
   https://github.com/hybridherbst/web-bluetooth-e87
 
