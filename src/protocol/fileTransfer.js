@@ -11,7 +11,7 @@ const {
 
 const BADGE_IMAGE_SIZE      = 360
 const WRITE_CHUNK_SIZE      = 487
-const SINGLE_PART_MAX       = 24996
+const SINGLE_PART_MAX       = 24500
 const STEP_TIMEOUT_MS       = 12000
 const FINAL_STEP_TIMEOUT_MS = 30000
 

@@ -102,4 +102,4 @@ The full JPEG packet is sent as a stream of 487-byte BLE ATT writes via `_writeC
 
 ### Image preprocessing
 
-`preprocessImage()` in `fileTransfer.js` resizes the input to 360×360, then binary-searches JPEG quality (7 iterations) to find the highest quality whose encoded size is ≤ `SINGLE_PART_MAX` (24996 bytes). It accepts an optional `crop` region `{x, y, size}` in source-image pixels applied before resize.
+`preprocessImage()` in `fileTransfer.js` resizes the input to 360×360, then binary-searches JPEG quality (7 iterations) to find the highest quality whose encoded size is ≤ `SINGLE_PART_MAX` (24500 bytes). It accepts an optional `crop` region `{x, y, size}` in source-image pixels applied before resize.

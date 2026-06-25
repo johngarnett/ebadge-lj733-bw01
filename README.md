@@ -41,7 +41,7 @@ node src/index.js send <image-file> [badge-name]
 - `image-file` — any format Sharp can decode (JPEG, PNG, WebP, …)
 - `badge-name` — optional; scans for a BLE device whose name contains this string (default: `BW01`)
 
-The image is resized to 360×360 and JPEG-compressed to fit within the badge's 24 KB limit before sending.
+The image is resized to 360×360 and JPEG-compressed to fit within the badge's 24.5 KB limit before sending.
 
 ### Check battery level
 
