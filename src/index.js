@@ -49,7 +49,7 @@ async function cmdSend([imagePath, badgeName = null]) {
          console.log(`Battery: ${batt}%${warn}`)
       }
       console.log(`\nSending ${path.resolve(imagePath)}…\n`)
-      await transfer.sendFile(path.resolve(imagePath))
+      await transfer.sendFile(path.resolve(imagePath), { allowSourceAsIs: true })
       console.log('\nTransfer complete ✓')
    } catch (err) {
       console.error('\nError:', err.message)

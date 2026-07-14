@@ -1,3 +1,4 @@
+const fs = require('fs')
 const path = require('path')
 const { EventEmitter } = require('events')
 
@@ -52,7 +53,7 @@ class FileTransfer extends EventEmitter {
    async sendFile(filePath, options = {}) {
       const filename = path.basename(filePath)
       console.log(`Preprocessing ${filename} → ${BADGE_IMAGE_SIZE}×${BADGE_IMAGE_SIZE} JPEG…`)
-      const { data: jpegData, quality } = await preprocessImage(filePath, options.crop || null)
+      const { data: jpegData, quality } = await preprocessImage(filePath, options.crop || null, options.allowSourceAsIs || false)
       this._checksum = computeCrc32(jpegData)
       this._jpegData = jpegData
       this._quality  = quality
@@ -346,11 +347,26 @@ class FileTransfer extends EventEmitter {
 
 // ── Image preprocessing ───────────────────────────────────────────────────────
 
-async function preprocessImage(filePath, crop = null) {
+async function preprocessImage(filePath, crop = null, allowSourceAsIs = false) {
    const sharp = require('sharp')
    const QUALITY_MAX    = 100
    const QUALITY_MIN    = 1
    const MAX_ITERATIONS = 7
+
+   // CLI path: if the source is already a badge-ready JPEG (correct dimensions,
+   // under the byte limit) and no crop is requested, send it untouched to avoid
+   // a lossy re-encode. Any of these conditions failing falls through to resize.
+   if (allowSourceAsIs && !crop) {
+      const asIs = await sharp(filePath).metadata()
+      const fileData = await fs.promises.readFile(filePath)
+      if (asIs.format === 'jpeg'
+         && asIs.width === BADGE_IMAGE_SIZE
+         && asIs.height === BADGE_IMAGE_SIZE
+         && fileData.length <= SINGLE_PART_MAX) {
+         console.log(`  source is ${BADGE_IMAGE_SIZE}×${BADGE_IMAGE_SIZE} JPEG, ${fileData.length} bytes ✓ (sending as-is)`)
+         return { data: fileData, quality: null }
+      }
+   }
 
    // Crop first (if requested), then resize once to raw pixels so each quality
    // attempt encodes the same pixel data.
